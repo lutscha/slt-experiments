@@ -102,11 +102,11 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     save_files_final(directory,
                      [("eigs", eigs[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
-                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
-                      ("input_norms", torch.tensor(Xs[1:])),
-                      ("output_norms", torch.tensor(Ys[1:])),
-                      ("weight_norms", torch.tensor(Ws[1:])),
-                      ("input_norms", torch.tensor(gWs[2:]))])
+                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
+                    #   ("input_norms", torch.tensor(Xs[1:])),
+                    #   ("output_norms", torch.tensor(Ys[1:])),
+                    #   ("weight_norms", torch.tensor(Ws[1:])),
+                    #   ("input_norms", torch.tensor(gWs[2:]))])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
