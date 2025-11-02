@@ -49,13 +49,13 @@ def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float, wd: float
 def save_files(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
     """Save a bunch of tensors."""
     for (arr_name, arr) in arrays:
-        torch.save(arr, f"{directory}/{arr_name}")
+        torch.save(arr, f"{directory}/{arr_name}.pt")
 
 
 def save_files_final(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
     """Save a bunch of tensors."""
     for (arr_name, arr) in arrays:
-        torch.save(arr, f"{directory}/{arr_name}_final")
+        torch.save(arr, f"{directory}/{arr_name}_final.pt")
 
 
 def iterate_dataset(dataset: Dataset, batch_size: int):
