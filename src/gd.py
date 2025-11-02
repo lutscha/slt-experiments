@@ -13,7 +13,7 @@ from data import load_dataset, take_first, DATASETS
 
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
-         save_model: bool = False, beta: float = 0.0, nproj: int = 0,
+         norm_freq: int = -1, save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0):
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, beta)
     print(f"output directory: {directory}")
@@ -27,33 +27,6 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     torch.manual_seed(seed)
     network = load_architecture(arch_id, dataset).cuda()
 
-    ###########################################################################
-    # forward/backward hook approach to modeling activation and gradient size #
-    # uses up colab RAM really fast, cannot be sustained. think of better way #
-    ###########################################################################
-
-    # Create hooks for propagation
-    # Xs, Ys, Ws, gWs = [], [], [], []
-    # hook_handles = []
-
-    # def forward_hook(module, input, output):
-
-    #     Xs[-1].append(torch.norm(input[0]).detach())
-    #     Ws[-1].append(torch.norm(module.weight).detach())
-    #     Ys[-1].append(torch.norm(output).detach())
-
-    # def backward_hook(module, grad_input, grad_output):
-    #     if module.weight.grad is not None:
-    #         gWs[-1].append(torch.norm(module.weight.grad).detach())
-
-    # for name, module in network.named_modules():
-    #     print(name, module)
-    #     if isinstance(module, torch.nn.Linear):
-            
-    #         hook_handles.append(module.register_forward_hook(forward_hook))
-            
-    #         hook_handles.append(module.register_backward_hook(backward_hook))
-
     torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
@@ -63,14 +36,20 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
+    
+    linear_layer_count = 0
+    linear_layers = []
+    for module in network.modules():
+        if isinstance(module, torch.nn.Linear):
+            linear_layers.append((linear_layer_count, module))
+            linear_layer_count += 1
+
+    grad_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
+    activation_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
+    activation_update_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
 
     for step in range(0, max_steps):
-        
-        # Xs.append([])
-        # Ys.append([])
-        # Ws.append([])
-        # gWs.append([])
-        
+
         train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
@@ -97,16 +76,18 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         for (X, y) in iterate_dataset(train_dataset, physical_batch_size):
             loss = loss_fn(network(X.cuda()), y.cuda()) / len(train_dataset)
             loss.backward()
+
+        if norm_freq != -1 and step % norm_freq == 0:
+            for i, module in linear_layers:
+                grad_norms[step // norm_freq, i] = torch.norm(module.weight.grad)
+        
         optimizer.step()
 
     save_files_final(directory,
                      [("eigs", eigs[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                      ("grad_norms", grad_norms[:(step + 1) // norm_freq, ]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
-                    #   ("input_norms", torch.tensor(Xs[1:])),
-                    #   ("output_norms", torch.tensor(Ys[1:])),
-                    #   ("weight_norms", torch.tensor(Ws[1:])),
-                    #   ("input_norms", torch.tensor(gWs[2:]))])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
@@ -134,6 +115,8 @@ if __name__ == "__main__":
     parser.add_argument("--nproj", type=int, default=0, help="the dimension of random projections")
     parser.add_argument("--iterate_freq", type=int, default=-1,
                         help="the frequency at which we save random projections of the iterates")
+    parser.add_argument("--norm_freq", type=int, default=-1,
+                        help="the frequency at which we save the norm of the gradient of linear layers")
     parser.add_argument("--abridged_size", type=int, default=5000,
                         help="when computing top Hessian eigenvalues, use an abridged dataset of this size")
     parser.add_argument("--save_freq", type=int, default=-1,
