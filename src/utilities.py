@@ -137,9 +137,22 @@ def get_hessian_eigenvalues(network: nn.Module, loss_fn: nn.Module, dataset: Dat
     """
     hvp_delta = lambda delta: compute_hvp(network, loss_fn, dataset,
                                           delta, physical_batch_size=physical_batch_size, P=P).detach().cpu()
+    
     nparams = len(parameters_to_vector((network.parameters())))
     evals, evecs = lanczos(hvp_delta, nparams, neigs=neigs)
-    return evals
+
+    trace_est = trace_estimate(hvp_delta, nparams) #Estimate trace via Hutchinson estimator
+    low_trace = trace_est - evals.sum().item() #Estimates sum of N-50 eigenvalues of Hessian
+
+    return evals, low_trace
+
+def trace_estimate(hvp_fun, nparams, num_samples=30):
+    trace_est=0.0
+    for _ in range(num_samples):
+        z = torch.randn(nparams)
+        Hz = hvp_fun(z)
+        trace_est +=torch.dot(z, Hz)
+    return trace_est.item() / num_samples
 
 
 def compute_gradient(network: nn.Module, loss_fn: nn.Module,
