@@ -65,7 +65,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
-    eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
+    # eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
+    eigs = torch.zeros(200, neigs)
     low_traces = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
 
     for step in range(0, max_steps):
@@ -79,9 +80,13 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
 
-        if eig_freq != -1 and step % eig_freq == 0:
-            eigs[step // eig_freq, :], low_traces[step // eig_freq] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                physical_batch_size=physical_batch_size)
+        #if eig_freq != -1 and step % eig_freq == 0:
+        if eig_freq != -1 and step > 6000:
+            idx = step - 6001
+            # eigs[step // eig_freq, :], low_traces[step // eig_freq] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
+                                                                # physical_batch_size=physical_batch_size)
+            eigs[idx, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
+                                                                physical_batch_size=physical_batch_size)                                                    
             print("eigenvalues: ", eigs[step//eig_freq, :])
 
         if iterate_freq != -1 and step % iterate_freq == 0:
