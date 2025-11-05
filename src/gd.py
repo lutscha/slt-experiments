@@ -87,7 +87,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                                                                 # physical_batch_size=physical_batch_size)
             eigs[idx, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)                                                    
-            print("eigenvalues: ", eigs[step//eig_freq, :])
+            print("eigenvalues: ", eigs[idx, :])
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
@@ -108,8 +108,16 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             loss.backward()
         optimizer.step()
 
+    # save_files_final(directory,
+    #                  [("eigs", eigs[:(step + 1) // eig_freq]), ("low_traces", low_traces[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+    #                   ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
+    #                   ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
+    #                 #   ("input_norms", torch.tensor(Xs[1:])),
+    #                 #   ("output_norms", torch.tensor(Ys[1:])),
+    #                 #   ("weight_norms", torch.tensor(Ws[1:])),
+    #                 #   ("input_norms", torch.tensor(gWs[2:]))])
     save_files_final(directory,
-                     [("eigs", eigs[:(step + 1) // eig_freq]), ("low_traces", low_traces[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                     [("eigs", eigs), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
                     #   ("input_norms", torch.tensor(Xs[1:])),
