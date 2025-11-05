@@ -14,7 +14,7 @@ from data import load_dataset, take_first, DATASETS
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None):
     print(f'wd:{wd}')
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
     print(f"output directory: {directory}")
@@ -28,6 +28,11 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     torch.manual_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     network = load_architecture(arch_id, dataset).to(device)
+
+    if resume_model is not None:
+        print(f"Loading pretrained model weights from: {resume_model}")
+        checkpoint = torch.load(resume_model, map_location=device)
+        network.load_state_dict(checkpoint)
     #network = load_architecture(arch_id, dataset).cuda()
 
     ###########################################################################
@@ -67,7 +72,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     # eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
     eigs = torch.zeros(200, neigs)
-    low_traces = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
+    # low_traces = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
 
     for step in range(0, max_steps):
         
