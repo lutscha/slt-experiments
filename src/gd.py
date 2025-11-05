@@ -50,8 +50,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
-
+        print('outside')
         if eig_freq != -1 and step % eig_freq == 0:
+            print('inside')
             eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)                                                 
             print("eigenvalues: ", eigs[step // eig_freq, :])
@@ -59,9 +60,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
 
-        print('outside')
+        
         if save_freq != -1 and step % save_freq == 0:
-            print('IN')
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
