@@ -50,9 +50,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
-        print('outside')
+        
         if eig_freq != -1 and step % eig_freq == 0:
-            print('inside')
+           
             eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)                                                 
             print("eigenvalues: ", eigs[step // eig_freq, :])
