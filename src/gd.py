@@ -33,34 +33,6 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         print(f"Loading pretrained model weights from: {resume_model}")
         checkpoint = torch.load(resume_model, map_location=device)
         network.load_state_dict(checkpoint)
-    #network = load_architecture(arch_id, dataset).cuda()
-
-    ###########################################################################
-    # forward/backward hook approach to modeling activation and gradient size #
-    # uses up colab RAM really fast, cannot be sustained. think of better way #
-    ###########################################################################
-
-    # Create hooks for propagation
-    # Xs, Ys, Ws, gWs = [], [], [], []
-    # hook_handles = []
-
-    # def forward_hook(module, input, output):
-
-    #     Xs[-1].append(torch.norm(input[0]).detach())
-    #     Ws[-1].append(torch.norm(module.weight).detach())
-    #     Ys[-1].append(torch.norm(output).detach())
-
-    # def backward_hook(module, grad_input, grad_output):
-    #     if module.weight.grad is not None:
-    #         gWs[-1].append(torch.norm(module.weight.grad).detach())
-
-    # for name, module in network.named_modules():
-    #     print(name, module)
-    #     if isinstance(module, torch.nn.Linear):
-            
-    #         hook_handles.append(module.register_forward_hook(forward_hook))
-            
-    #         hook_handles.append(module.register_backward_hook(backward_hook))
 
     torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
@@ -75,22 +47,13 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     for step in range(0, max_steps):
         
-        # Xs.append([])
-        # Ys.append([])
-        # Ws.append([])
-        # gWs.append([])
-        
         train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
 
         if eig_freq != -1 and step % eig_freq == 0:
-        # if eig_freq != -1 and step > 6000:
-            # idx = step - 6001
             eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                physical_batch_size=physical_batch_size)
-            # eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                # physical_batch_size=physical_batch_size)                                                    
+                                                                physical_batch_size=physical_batch_size)                                                 
             print("eigenvalues: ", eigs[step // eig_freq, :])
 
         if iterate_freq != -1 and step % iterate_freq == 0:
