@@ -15,10 +15,10 @@ import os
 DEFAULT_PHYS_BS = 1000
 
 
-def get_gd_directory(dataset: str, lr: float, arch_id: str, seed: int, opt: str, loss: str, beta: float = None):
+def get_gd_directory(dataset: str, lr: float, weight_decay:float, arch_id: str, seed: int, opt: str, loss: str, beta: float = None):
     """Return the directory in which the results should be saved."""
     results_dir = os.environ["RESULTS"]
-    directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/{opt}/"
+    directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/{opt}/{weight_decay}"
     if opt == "gd":
         return f"{directory}/lr_{lr}"
     elif opt == "polyak" or opt == "nesterov":
@@ -37,9 +37,9 @@ def get_modified_flow_directory(dataset: str, arch_id: str, seed: int, loss: str
     return f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/modified_flow_lr_{gd_lr}/tick_{tick}"
 
 
-def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float) -> Optimizer:
+def get_gd_optimizer(parameters, opt: str, lr: float, weight_decay: float, momentum: float) -> Optimizer:
     if opt == "gd":
-        return SGD(parameters, lr=lr)
+        return SGD(parameters, lr=lr, weight_decay=weight_decay)
     elif opt == "polyak":
         return SGD(parameters, lr=lr, momentum=momentum, nesterov=False)
     elif opt == "nesterov":

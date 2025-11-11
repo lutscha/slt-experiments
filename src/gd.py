@@ -13,9 +13,9 @@ from data import load_dataset, take_first, DATASETS
 
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
-         norm_freq: int = -1, save_model: bool = False, beta: float = 0.0, nproj: int = 0,
+         norm_freq: int = -1, save_model: bool = False, weight_decay: float = 0.0 ,beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0):
-    directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, beta)
+    directory = get_gd_directory(dataset, lr, weight_decay, arch_id, seed, opt, loss, beta)
     print(f"output directory: {directory}")
     makedirs(directory, exist_ok=True)
 
@@ -30,7 +30,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
-    optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta)
+    optimizer = get_gd_optimizer(network.parameters(), opt, lr, weight_decay, beta)
 
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
@@ -45,6 +45,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             linear_layer_count += 1
 
     grad_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
+
     activation_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
     activation_update_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
 
@@ -85,7 +86,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     save_files_final(directory,
                      [("eigs", eigs[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("grad_norms", grad_norms[:(step + 1) // norm_freq, ]),
+                      ("grad_norms", grad_norms[:(step + 1) // norm_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
     if save_model:
@@ -98,6 +99,7 @@ if __name__ == "__main__":
     parser.add_argument("arch_id", type=str, help="which network architectures to train")
     parser.add_argument("loss", type=str, choices=["ce", "mse"], help="which loss function to use")
     parser.add_argument("lr", type=float, help="the learning rate")
+    parser.add_argument("weight_decay", type=float, help="the weight decay of the GD")
     parser.add_argument("max_steps", type=int, help="the maximum number of gradient steps to train for")
     parser.add_argument("--opt", type=str, choices=["gd", "polyak", "nesterov"],
                         help="which optimization algorithm to use", default="gd")
@@ -127,6 +129,6 @@ if __name__ == "__main__":
 
     main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
          neigs=args.neigs, physical_batch_size=args.physical_batch_size, eig_freq=args.eig_freq,
-         iterate_freq=args.iterate_freq, save_freq=args.save_freq, save_model=args.save_model, beta=args.beta,
-         nproj=args.nproj, loss_goal=args.loss_goal, acc_goal=args.acc_goal, abridged_size=args.abridged_size,
-         seed=args.seed)
+         iterate_freq=args.iterate_freq, save_freq=args.save_freq, norm_freq=args.norm_freq, save_model=args.save_model,
+         weight_decay=args.weight_decay, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
+         acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed)
