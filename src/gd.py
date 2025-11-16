@@ -34,7 +34,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         checkpoint = torch.load(resume_model, map_location=device)
         network.load_state_dict(checkpoint)
 
-    torch.manual_seed(7)
+    # torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
     optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd)
