@@ -4,7 +4,7 @@ from typing import Tuple
 from torch.utils.data import TensorDataset
 from cifar import load_cifar
 from synthetic import make_chebyshev_dataset, make_linear_dataset
-from wikitext import load_wikitext_2
+
 
 from typing import Union, Tuple, List
 
