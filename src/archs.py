@@ -7,6 +7,8 @@ from resnet_cifar import resnet32
 from vgg import vgg11_nodropout, vgg11_nodropout_bn
 from data import num_classes, num_input_channels, image_size, num_pixels
 
+
+
 _CONV_OPTIONS = {"kernel_size": 3, "padding": 1, "stride": 1}
 
 def get_activation(activation: str):
@@ -305,3 +307,5 @@ def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
         return fully_connected_net(dataset_name, [200, 200, 200], 'tanh', bias=True)
     elif arch_id == 'fc-tanh-depth4':
         return fully_connected_net(dataset_name, [200, 200, 200, 200], 'tanh', bias=True)
+    
+    
