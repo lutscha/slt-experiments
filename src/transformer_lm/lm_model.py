@@ -46,7 +46,7 @@ class TransformerLM(nn.Module):
         super().__init__()
 
         self.ninp = ninp
-        self.encoder = nn.Embedding(ntoken, ninp)
+        self.encoder = nn.Embedding(ntoken, ninp) #(batch, seq_lenght, ninp)
         self.pos_encoder = PositionalEncoding(ninp, dropout)
 
         encoder_layer = nn.TransformerEncoderLayer(
@@ -55,7 +55,7 @@ class TransformerLM(nn.Module):
             dim_feedforward=nhid,
             dropout=dropout,
             activation="relu",
-            batch_first=True,
+            # batch_first=True,  #(Batch, seq_length)
         )
 
         self.transformer_encoder = nn.TransformerEncoder(
@@ -73,9 +73,14 @@ class TransformerLM(nn.Module):
         self.decoder.bias.data.zero_()
 
     def forward(self, src, src_mask=None):
-    # src expected shape: (seq, batch)
+    # src expected shape: (seq, batch) check this with the True flag
+        
+        seq_len = src.size(0)
+        if src_mask is None or src_mask.size(0) != seq_len: #Dynamical shaping
+            src_mask = generate_square_subsequent_mask(seq_len).to(src.device)
 
-        src = self.encoder(src) * math.sqrt(self.ninp)
+
+        src = self.encoder(src) * math.sqrt(self.ninp) #Scale embeddings
         src = self.pos_encoder(src)
 
         output = self.transformer_encoder(src, mask=src_mask)

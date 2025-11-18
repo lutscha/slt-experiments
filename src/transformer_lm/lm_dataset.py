@@ -16,18 +16,18 @@ def batchify(data_ids, batch_size):
     N = data_ids.size(0)
     n_batch = N // batch_size
     data = data_ids[: n_batch * batch_size]
-    data = data.view(batch_size, -1)  # (batch, seq)
+    data = data.view(batch_size, -1).t()  # (batch, seq)
     return data
 
 # -------------------------------------------------------------
 # Produce (X, Y) batches using BPTT slicing
 # -------------------------------------------------------------
 def get_bptt_iter(data, bptt):
-    # data: (batch, seq)
-    batch_size, seq_len = data.size()
+    
+    seq_len, batch_size = data.size()
     for i in range(0, seq_len - 1, bptt):
-        X = data[:, i : i + bptt]
-        Y = data[:, i + 1 : i + 1 + bptt]
+        X = data[i : i + bptt, :]
+        Y = data[i + 1 : i + 1 + bptt, :]
         yield X, Y
 
 # -------------------------------------------------------------
@@ -72,5 +72,11 @@ def load_wikitext2_lm(bptt=35, batch_size=20):
     train_iter = list(get_bptt_iter(train_data, bptt))
     valid_iter = list(get_bptt_iter(valid_data, bptt))
     test_iter  = list(get_bptt_iter(test_data, bptt))
+    
 
+    print(f"Vocab size = {len(vocab)}")
+    print(f"Train iter = {len(train_iter)}")
+    print(f"Test  iter = {len(test_iter)}")
+
+    print('-----------------------')
     return train_iter, valid_iter, test_iter, vocab

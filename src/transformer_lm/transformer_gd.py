@@ -42,9 +42,12 @@ def main(
     torch.manual_seed(seed)
 
     # Load HuggingFace WikiText2 dataset
-    train_dataset, valid_dataset, test_dataset, vocab = load_wikitext2_lm(
-        bptt=bptt, batch_size=batch_size
-    )
+    train_iter, valid_iter, test_iter, vocab = load_wikitext2_lm(
+    bptt=bptt, batch_size=batch_size
+    ) 
+    train_dataset = train_iter
+    valid_dataset = valid_iter
+    test_dataset  = test_iter
 
     ntoken = len(vocab)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,8 +89,8 @@ def main(
             for X, Y in train_dataset:
                 X = X.to(device)
                 Y = Y.to(device)
-
-                seq_len = X.size(1)
+                  
+                seq_len = X.size(0)
                 src_mask = generate_square_subsequent_mask(seq_len).to(device)
 
                 out = model(X, src_mask)
@@ -164,7 +167,7 @@ def main(
             X = X.to(device)
             Y = Y.to(device)
 
-            seq_len = X.size(1)
+            seq_len = X.size(0)
             src_mask = generate_square_subsequent_mask(seq_len).to(device)
 
             out = model(X, src_mask)
