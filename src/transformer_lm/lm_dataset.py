@@ -37,7 +37,7 @@ def load_wikitext2_lm(bptt=35, batch_size=20):
     ds = load_dataset("Salesforce/wikitext", "wikitext-2-v1")
 
     # build vocab
-    from torchtext.vocab import build_vocab_from_iterator
+    from .vocab import build_vocab_from_iterator
 
     def token_iter():
         for split in ["train", "validation", "test"]:
