@@ -1,10 +1,8 @@
-# transformer_gd.py
 import os
 import torch
 import argparse
 from torch.nn.utils import parameters_to_vector
 
-# --- your utilities ---
 from ..utilities import (
     get_gd_directory,
     get_gd_optimizer,
@@ -13,14 +11,10 @@ from ..utilities import (
     save_files_final,
 )
 
-# --- Transformer LM + dataset loader ---
 from .lm_model import TransformerLM, generate_square_subsequent_mask
-from .lm_dataset import load_wikitext2_lm, get_batch
+from .lm_dataset import load_wikitext2_lm
 
 
-# ======================================================================
-# Full-batch GD training for Transformer LM on WikiText-2
-# ======================================================================
 def main(
     lr: float,
     max_steps: int,
@@ -38,9 +32,6 @@ def main(
     dataset: str = "wikitext2",
 ):
 
-    # ----------------------------------------------------------
-    # Prepare output dir
-    # ----------------------------------------------------------
     arch_id = "transformer"
     loss_type = "nll"
 
@@ -48,27 +39,19 @@ def main(
     os.makedirs(directory, exist_ok=True)
     print(f"\nSaving results to:\n  {directory}\n")
 
-    # ----------------------------------------------------------
-    # Seed
-    # ----------------------------------------------------------
     torch.manual_seed(seed)
 
-    # ----------------------------------------------------------
-    # Load data
-    # ----------------------------------------------------------
-    train_data, valid_data, test_data, vocab = load_wikitext2_lm(
+    # Load HuggingFace WikiText2 dataset
+    train_dataset, valid_dataset, test_dataset, vocab = load_wikitext2_lm(
         bptt=bptt, batch_size=batch_size
     )
 
     ntoken = len(vocab)
-    print(f"Vocab size = {ntoken}")
-    print(f"Train tokens = {train_data.numel()}")
-    print(f"Test  tokens = {test_data.numel()}")
-
-    # ----------------------------------------------------------
-    # Initialize model
-    # ----------------------------------------------------------
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Vocab size = {ntoken}")
+    print(f"Train tokens = {len(train_dataset) * bptt}")
+    print(f"Test  tokens = {len(test_dataset) * bptt}")
 
     model = TransformerLM(
         ntoken=ntoken,
@@ -79,97 +62,82 @@ def main(
         dropout=0.0,
     ).to(device)
 
-    # ----------------------------------------------------------
-    # Static causal mask
-    # ----------------------------------------------------------
-    src_mask = generate_square_subsequent_mask(bptt).to(device)
-
-    # ----------------------------------------------------------
-    # Loss
-    # ----------------------------------------------------------
     loss_fn = torch.nn.NLLLoss(reduction="sum")
-
-    # ----------------------------------------------------------
-    # Optimizer
-    # ----------------------------------------------------------
     optimizer = get_gd_optimizer(model.parameters(), opt, lr, momentum=0.0, wd=wd)
 
-    # ----------------------------------------------------------
-    # Logs
-    # ----------------------------------------------------------
     train_loss_log = torch.zeros(max_steps)
     test_loss_log = torch.zeros(max_steps)
-
     eigs = torch.zeros(max_steps // eig_freq if eig_freq > 0 else 0, neigs)
+    iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, nproj)
 
     if nproj > 0:
-        iterates = torch.zeros(max_steps // iterate_freq, nproj)
         proj_matrix = torch.randn(nproj, len(parameters_to_vector(model.parameters())))
-    else:
-        iterates = None
 
-    # ==========================================================
-    # Full-batch GD loop
-    # ==========================================================
+    # ================================================================
+    # TRAINING LOOP
+    # ================================================================
     for step in range(max_steps):
 
-        # ===========================================
-        # Evaluate train loss
-        # ===========================================
-        model.eval()
-        total_train_loss = 0.0
-
+        # -----------------------------------
+        # Compute TRAIN LOSS (full-batch)
+        # -----------------------------------
+        train_loss = 0.0
         with torch.no_grad():
-            for i in range(0, train_data.size(0) - 1, bptt):
-                data, targets = get_batch(train_data, i, bptt)
-                data = data.to(device)
-                targets = targets.to(device)
+            for X, Y in train_dataset:
+                X = X.to(device)
+                Y = Y.to(device)
 
-                output = model(data, src_mask)
-                output = output.reshape(-1, ntoken)
-                targets = targets.reshape(-1)
+                seq_len = X.size(1)
+                src_mask = generate_square_subsequent_mask(seq_len).to(device)
 
-                total_train_loss += loss_fn(output, targets).item()
+                out = model(X, src_mask)
+                out = out.reshape(-1, ntoken)
+                y_flat = Y.reshape(-1)
 
-        train_loss_log[step] = total_train_loss / train_data.size(0)
+                train_loss += loss_fn(out, y_flat)
 
-        # ===========================================
-        # Evaluate test loss
-        # ===========================================
-        total_test_loss = 0.0
+        train_loss_log[step] = train_loss / len(train_dataset)
+
+        # -----------------------------------
+        # Compute TEST LOSS
+        # -----------------------------------
+        test_loss = 0.0
         with torch.no_grad():
-            for i in range(0, test_data.size(0) - 1, bptt):
-                data, targets = get_batch(test_data, i, bptt)
-                data = data.to(device)
-                targets = targets.to(device)
+            for X, Y in test_dataset:
+                X = X.to(device)
+                Y = Y.to(device)
 
-                output = model(data, src_mask)
-                output = output.reshape(-1, ntoken)
-                targets = targets.reshape(-1)
+                seq_len = X.size(1)
+                src_mask = generate_square_subsequent_mask(seq_len).to(device)
 
-                total_test_loss += loss_fn(output, targets).item()
+                out = model(X, src_mask)
+                out = out.reshape(-1, ntoken)
+                y_flat = Y.reshape(-1)
 
-        test_loss_log[step] = total_test_loss / test_data.size(0)
+                test_loss += loss_fn(out, y_flat)
+
+        test_loss_log[step] = test_loss / len(test_dataset)
 
         print(
-            f"{step}\tTrain NLL={train_loss_log[step]:.4f}\t"
+            f"{step}\t"
+            f"Train NLL={train_loss_log[step]:.4f}\t"
             f"Test NLL={test_loss_log[step]:.4f}"
         )
 
-        # ===========================================
-        # Hessian eigenvalues
-        # ===========================================
+        # -----------------------------------
+        # HESSIAN EIGENVALUES
+        # -----------------------------------
         if eig_freq > 0 and step % eig_freq == 0:
             print("  Computing eigenvalues...")
             eigvals = get_hessian_eigenvalues(
-                model, loss_fn, [(train_data, bptt)], neigs=neigs
+                model, loss_fn, train_dataset, neigs=neigs
             )
             eigs[step // eig_freq] = eigvals
             print("  Top eigenvalues:", eigvals.tolist())
 
-        # ===========================================
-        # Save intermediate logs
-        # ===========================================
+        # -----------------------------------
+        # SAVE INTERMEDIATE LOGS
+        # -----------------------------------
         if save_freq > 0 and step % save_freq == 0:
             save_files(
                 directory,
@@ -180,36 +148,37 @@ def main(
                 ],
             )
 
-        # ===========================================
-        # Log iterates
-        # ===========================================
+        # -----------------------------------
+        # ITERATE LOGGING
+        # -----------------------------------
         if iterate_freq > 0 and step % iterate_freq == 0 and nproj > 0:
-            vec = parameters_to_vector(model.parameters()).detach().cpu()
-            iterates[step // iterate_freq] = proj_matrix @ vec
+            iter_vec = parameters_to_vector(model.parameters()).detach().cpu()
+            iterates[step // iterate_freq] = proj_matrix @ iter_vec
 
-        # ===========================================
-        # GD update
-        # ===========================================
-        model.train()
+        # ================================================================
+        # FULL-BATCH GRADIENT DESCENT UPDATE
+        # ================================================================
         optimizer.zero_grad(set_to_none=True)
 
-        for i in range(0, train_data.size(0) - 1, bptt):
-            data, targets = get_batch(train_data, i, bptt)
-            data = data.to(device)
-            targets = targets.to(device)
+        for X, Y in train_dataset:
+            X = X.to(device)
+            Y = Y.to(device)
 
-            output = model(data, src_mask)
-            output = output.reshape(-1, ntoken)
-            targets = targets.reshape(-1)
+            seq_len = X.size(1)
+            src_mask = generate_square_subsequent_mask(seq_len).to(device)
 
-            batch_loss = loss_fn(output, targets)
+            out = model(X, src_mask)
+            out = out.reshape(-1, ntoken)
+            y_flat = Y.reshape(-1)
+
+            batch_loss = loss_fn(out, y_flat)
             batch_loss.backward()
 
         optimizer.step()
 
-    # ==========================================================
-    # Save final logs
-    # ==========================================================
+    # ================================================================
+    # SAVE FINAL RESULTS
+    # ================================================================
     save_files_final(
         directory,
         [
@@ -224,18 +193,13 @@ def main(
         torch.save(model.state_dict(), f"{directory}/snapshot_final")
 
 
-# ----------------------------------------------------------------------
-# CLI
-# ----------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--lr", type=float, required=True)
     parser.add_argument("--max_steps", type=int, required=True)
-
     parser.add_argument("--bptt", type=int, default=35)
     parser.add_argument("--batch_size", type=int, default=20)
-
     parser.add_argument("--wd", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--neigs", type=int, default=0)
@@ -246,4 +210,6 @@ if __name__ == "__main__":
     parser.add_argument("--save_model", action="store_true")
 
     args = parser.parse_args()
+
     main(**vars(args))
+

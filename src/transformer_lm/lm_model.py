@@ -55,6 +55,7 @@ class TransformerLM(nn.Module):
             dim_feedforward=nhid,
             dropout=dropout,
             activation="relu",
+            batch_first=True,
         )
 
         self.transformer_encoder = nn.TransformerEncoder(
