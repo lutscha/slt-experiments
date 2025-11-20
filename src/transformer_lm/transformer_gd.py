@@ -272,17 +272,17 @@ def evaluate(model, data_source, criterion, bptt, device):
 
     return total_loss / ((seq_len - 1) // bptt)
 
-def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, device="cuda"):
+def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, ninp=100, nhead=1, nhid=100, nlayers=1, device="cuda"):
 
     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
     ntokens = len(vocab)
 
     model = TransformerLM(
         ntoken=ntokens,
-        ninp=200,
-        nhead=2,
-        nhid=200,
-        nlayers=2,
+        ninp=ninp,
+        nhead=nhead,
+        nhid=nhid,
+        nlayers=nlayers,
         dropout=0.0
     ).to(device)
 
