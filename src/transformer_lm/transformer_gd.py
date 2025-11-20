@@ -245,10 +245,11 @@ def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
 
         total_loss += loss_unscaled.item()
         i += bptt
+        total_tokens += targets.numel()
 
     clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
     optimizer.step()
-    return total_loss
+    return total_loss / total_tokens
 
 def evaluate(model, data_source, criterion, bptt, device):
     model.eval()
