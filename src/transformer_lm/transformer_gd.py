@@ -248,7 +248,7 @@ def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
 
     clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
     optimizer.step()
-    return total_loss // num_chunks
+    return total_loss
 
 def evaluate(model, data_source, criterion, bptt, device):
     model.eval()
