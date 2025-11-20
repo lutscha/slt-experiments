@@ -244,7 +244,7 @@ def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
         loss = loss_unscaled/num_chunks
         loss.backward()
 
-        total_loss += loss_unscaled.item()
+        total_loss += loss_unscaled.item()*targets.numel()
         i += bptt
         total_tokens += targets.numel()
 
