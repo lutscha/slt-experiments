@@ -226,6 +226,7 @@ from torch.nn.utils import clip_grad_norm_
 def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
     model.train()
     total_loss = 0
+    total_tokens = 0
     ntokens = model.decoder.out_features
     seq_len, batch_size = train_data.size()
 
