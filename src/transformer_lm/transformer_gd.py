@@ -1,11 +1,7 @@
 import os
 import torch
 import argparse
-torch.nn.attention.sdpa_kernel(
-    enable_flash=False,
-    enable_mem_efficient=False,
-    enable_math=True  # keep math fallback enabled
-)
+
 from ..utilities import (
     get_gd_directory,
     get_gd_optimizer,
