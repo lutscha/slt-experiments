@@ -112,12 +112,32 @@ def get_loss_and_acc(loss: str):
     
 
 
+# def compute_hvp(network: nn.Module, loss_fn: nn.Module,
+#                 dataset: Dataset, vector: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS, P: Tensor = None):
+#     """Compute a Hessian-vector product.
+    
+#     If the optional preconditioner P is not set to None, return P^{-1/2} H P^{-1/2} v rather than H v.
+#     """
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     p = len(parameters_to_vector(network.parameters()))
+#     n = len(dataset)
+#     hvp = torch.zeros(p, dtype=torch.float, device=device)
+#     vector = vector.to(device)
+#     if P is not None:
+#         vector = vector / P.to(device).sqrt()
+#     for (X, y) in iterate_dataset(dataset, physical_batch_size):
+#         loss = loss_fn(network(X), y) / n
+#         grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
+#         dot = parameters_to_vector(grads).mul(vector).sum()
+#         grads = [g.contiguous() for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
+#         hvp += parameters_to_vector(grads)
+#     if P is not None:
+#         hvp = hvp / P.to(device).sqrt()
+#     return hvp
+
 def compute_hvp(network: nn.Module, loss_fn: nn.Module,
                 dataset: Dataset, vector: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS, P: Tensor = None):
-    """Compute a Hessian-vector product.
-    
-    If the optional preconditioner P is not set to None, return P^{-1/2} H P^{-1/2} v rather than H v.
-    """
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     p = len(parameters_to_vector(network.parameters()))
     n = len(dataset)
@@ -125,14 +145,51 @@ def compute_hvp(network: nn.Module, loss_fn: nn.Module,
     vector = vector.to(device)
     if P is not None:
         vector = vector / P.to(device).sqrt()
-    for (X, y) in iterate_dataset(dataset, physical_batch_size):
-        loss = loss_fn(network(X), y) / n
-        grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
-        dot = parameters_to_vector(grads).mul(vector).sum()
-        grads = [g.contiguous() for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
-        hvp += parameters_to_vector(grads)
+
+    # Detect if this is a language model dataset (already mini-batches)
+    sample_X, sample_y = dataset[0]
+    is_lm_dataset = sample_X.dim() == 2
+
+    if is_lm_dataset:
+        # ============================================================
+        # LANGUAGE MODEL CASE (seq_len x batch_size)
+        # ============================================================
+        for X, y in dataset:
+            X = X.to(device)
+            y = y.to(device)
+
+            seq_len = X.size(0)
+            src_mask = generate_square_subsequent_mask(seq_len).to(device)
+
+            logits = network(X, src_mask)                # (seq, batch, vocab)
+            logits = logits.reshape(-1, logits.size(-1)) # (seq*batch, vocab)
+            y_flat = y.reshape(-1)                       # (seq*batch)
+
+            loss = loss_fn(logits, y_flat) / n
+
+            grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
+            dot = parameters_to_vector(grads).mul(vector).sum()
+            grads = [g.contiguous()
+                     for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
+            hvp += parameters_to_vector(grads)
+
+    else:
+        # ============================================================
+        # CNN / MLP CASE (normal samples, use batching)
+        # ============================================================
+        for X, y in iterate_dataset(dataset, physical_batch_size):
+            logits = network(X)
+            loss = loss_fn(logits, y) / n
+
+            grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
+            dot = parameters_to_vector(grads).mul(vector).sum()
+            grads = [g.contiguous()
+                     for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
+            hvp += parameters_to_vector(grads)
+
     if P is not None:
         hvp = hvp / P.to(device).sqrt()
+
     return hvp
 
 
