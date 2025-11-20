@@ -230,23 +230,24 @@ def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
     seq_len, batch_size = train_data.size()
 
     i = 0
+    optimizer.zero_grad()
+    num_chunks = (seq_len-1) // bptt
+
     while i < seq_len - 1:
         data, targets = get_batch(train_data, i, bptt)
         data = data.to(device)
         targets = targets.to(device)
 
-        optimizer.zero_grad()
-
         output = model(data)
         loss = criterion(output.reshape(-1, ntokens), targets)
+        loss = loss/num_chunks
         loss.backward()
-
-        clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
-        optimizer.step()
 
         total_loss += loss.item()
         i += bptt
 
+    clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
+    optimizer.step()
     return total_loss / (seq_len // bptt)
 
 def evaluate(model, data_source, criterion, bptt, device):
@@ -294,7 +295,7 @@ def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, device="cuda"):
     test_loss = evaluate(model, test_data, criterion, bptt, device)
     print("Final test NLL:", test_loss)
 
-def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, device="cuda"):
+def run_training(lr=0.1,wd=0.0, epochs=5, bptt=35, batch_size=20, device="cuda"):
 
     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
     ntokens = len(vocab)
@@ -309,7 +310,7 @@ def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, device="cuda"):
     ).to(device)
 
     criterion = nn.NLLLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
 
     for epoch in range(epochs):
         train_loss = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
