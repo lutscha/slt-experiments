@@ -1,11 +1,11 @@
 import os
 import torch
 import argparse
-from torch.nn.utils import parameters_to_vector
-torch.backends.cuda.matmul.allow_tf32 = False
-torch.backends.cuda.flash_sdp_enabled = False
-torch.backends.cuda.mem_efficient_sdp_enabled = False
-torch.backends.cuda.math_sdp_enabled = False
+torch.nn.attention.sdpa_kernel(
+    enable_flash=False,
+    enable_mem_efficient=False,
+    enable_math=True  # keep math fallback enabled
+)
 from ..utilities import (
     get_gd_directory,
     get_gd_optimizer,
