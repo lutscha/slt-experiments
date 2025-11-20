@@ -110,7 +110,7 @@ def main(
                 X = X.to(device)
                 Y = Y.to(device)
 
-                seq_len = X.size(1)
+                seq_len = X.size(0)
                 src_mask = generate_square_subsequent_mask(seq_len).to(device)
 
                 out = model(X, src_mask)
