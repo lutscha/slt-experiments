@@ -239,16 +239,16 @@ def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
         targets = targets.to(device)
 
         output = model(data)
-        loss = criterion(output.reshape(-1, ntokens), targets)
-        loss = loss/num_chunks
+        loss_unscaled = criterion(output.reshape(-1, ntokens), targets)
+        loss = loss_unscaled/num_chunks
         loss.backward()
 
-        total_loss += loss.item()
+        total_loss += loss_unscaled.item()
         i += bptt
 
     clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
     optimizer.step()
-    return total_loss / (seq_len // bptt)
+    return total_loss // num_chunks
 
 def evaluate(model, data_source, criterion, bptt, device):
     model.eval()
