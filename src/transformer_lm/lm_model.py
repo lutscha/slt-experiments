@@ -74,7 +74,7 @@ class TransformerLM(nn.Module):
 
     def forward(self, src, src_mask=None):
     # src expected shape: (seq, batch) check this with the True flag
-        
+        print(src.shape)
         seq_len = src.size(0)
         if src_mask is None or src_mask.size(0) != seq_len: #Dynamical shaping
             src_mask = generate_square_subsequent_mask(seq_len).to(src.device)
