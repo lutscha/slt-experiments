@@ -58,13 +58,35 @@ def save_files_final(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
         torch.save(arr, f"{directory}/{arr_name}_final.pt")
 
 
-def iterate_dataset(dataset: Dataset, batch_size: int):
-    """Iterate through a dataset, yielding batches of data."""
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    for (batch_X, batch_y) in loader:
-        yield batch_X.to(device), batch_y.to(device)
+# def iterate_dataset(dataset: Dataset, batch_size: int):
+#     """Iterate through a dataset, yielding batches of data."""
+#     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     for (batch_X, batch_y) in loader:
+#         yield batch_X.to(device), batch_y.to(device)
 
+def iterate_dataset(dataset, batch_size):
+    """
+    Iterate through dataset, yielding batches of data.
+    Detects when dataset samples are already batched (LM case)
+    and skips DataLoader batching in that case.
+    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Peek at the first sample
+    sample_X, sample_y = dataset[0]
+
+    # --- CASE 1: LM dataset (samples are already mini-batches) ---
+    if sample_X.dim() == 2:     # X is (seq_len, batch)
+        for X, y in dataset:
+            yield X.to(device), y.to(device)
+        return
+
+    # --- CASE 2: regular dataset (MLP/CNN), use normal mini-batching ---
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    for batch_X, batch_y in loader:
+        yield batch_X.to(device), batch_y.to(device)
 
 def compute_losses(network: nn.Module, loss_functions: List[nn.Module], dataset: Dataset,
                    batch_size: int = DEFAULT_PHYS_BS):
