@@ -23,11 +23,13 @@ def batchify(data_ids, batch_size):
 # Produce (X, Y) batches using BPTT slicing
 # -------------------------------------------------------------
 def get_bptt_iter(data, bptt):
-    
-    seq_len, batch_size = data.size()
-    for i in range(0, seq_len - 1, bptt):
-        X = data[i : i + bptt, :]
-        Y = data[i + 1 : i + 1 + bptt, :]
+    seq_len_total, batch_size = data.size()
+    for i in range(0, seq_len_total - 1, bptt):
+        # compute length for this slice
+        seq_len = min(bptt, seq_len_total - 1 - i)
+
+        X = data[i : i + seq_len, :]
+        Y = data[i + 1 : i + 1 + seq_len, :]
         yield X, Y
 
 # -------------------------------------------------------------
