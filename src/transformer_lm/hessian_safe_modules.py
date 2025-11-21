@@ -13,7 +13,7 @@ class SlowButCorrectMultiheadAttention(nn.Module):
         super().__init__()
         assert embed_dim % num_heads == 0
         self.batch_first = False
-        
+
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.dropout = dropout
@@ -37,15 +37,17 @@ class SlowButCorrectMultiheadAttention(nn.Module):
         v = self.v_proj(x).view(S, B, H, D)
 
         # Scaled dot-product attention (manual, Hessian-safe)
-        scores = torch.einsum("sbh d, tbh d -> sbht", q, k) / (D ** 0.5)
+        scores = torch.einsum("sbhd,tbhd->sbht", q, k) / (D ** 0.5)
 
         if attn_mask is not None:
-            scores = scores + attn_mask  # broadcast OK
+            # Convert (S,T) -> (S,1,1,T) for broadcasting
+            mask = attn_mask.unsqueeze(1).unsqueeze(1)
+            scores = scores + mask
 
         attn = F.softmax(scores, dim=2)  # attention along "t"
         attn = F.dropout(attn, p=self.dropout, training=self.training)
 
-        out = torch.einsum("sbht, tbh d -> sbh d", attn, v)
+        out = torch.einsum("sbht,tbhd->sbhd", attn, v)
         out = out.reshape(S, B, E)
 
         return self.o_proj(out)
@@ -79,7 +81,7 @@ class MyTransformerEncoderLayer(nn.Module):
 
         self.activation = nn.ReLU()
 
-    def forward(self, src, src_mask=None):
+    def forward(self, src, src_mask=None, **kwargs):
         # Self attention
         attn_output = self.self_attn(src, attn_mask=src_mask)
         src = src + self.dropout1(attn_output)
