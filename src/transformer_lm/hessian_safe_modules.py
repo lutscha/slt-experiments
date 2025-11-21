@@ -7,12 +7,13 @@ class SlowButCorrectMultiheadAttention(nn.Module):
     A pure-PyTorch implementation of Multi-Head Attention that:
     ✔ Supports double backward (Hessian)
     ✔ Does NOT use FlashAttention or SDPA kernels
-    ✘ Is slower (O(n^2)) (where n is seq_lenght)
+    ✘ Is slower (O(n^2)) (where n is seq_lenght)   
     """
     def __init__(self, embed_dim, num_heads, dropout=0.0):
         super().__init__()
         assert embed_dim % num_heads == 0
-
+        self.batch_first = False
+        
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.dropout = dropout
