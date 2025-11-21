@@ -297,27 +297,27 @@ def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, ninp=100, nhead=1, nh
     test_loss = evaluate(model, test_data, criterion, bptt, device)
     print("Final test NLL:", test_loss)
 
-def run_training(lr=0.1,wd=0.0, epochs=5, bptt=35, batch_size=20, device="cuda"):
+# def run_training(lr=0.1,wd=0.0, epochs=5, bptt=35, batch_size=20, device="cuda"):
 
-    train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
-    ntokens = len(vocab)
+#     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
+#     ntokens = len(vocab)
 
-    model = TransformerLM(
-        ntoken=ntokens,
-        ninp=200,
-        nhead=2,
-        nhid=200,
-        nlayers=2,
-        dropout=0.0
-    ).to(device)
+#     model = TransformerLM(
+#         ntoken=ntokens,
+#         ninp=200,
+#         nhead=2,
+#         nhid=200,
+#         nlayers=2,
+#         dropout=0.0
+#     ).to(device)
 
-    criterion = nn.NLLLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
+#     criterion = nn.NLLLoss()
+#     optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
 
-    for epoch in range(epochs):
-        train_loss = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
-        val_loss = evaluate(model, valid_data, criterion, bptt, device)
-        print(f"Epoch {epoch} | Train NLL {train_loss:.2f} | Val NLL {val_loss:.2f}")
+#     for epoch in range(epochs):
+#         train_loss = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
+#         val_loss = evaluate(model, valid_data, criterion, bptt, device)
+#         print(f"Epoch {epoch} | Train NLL {train_loss:.2f} | Val NLL {val_loss:.2f}")
 
-    test_loss = evaluate(model, test_data, criterion, bptt, device)
-    print("Final test NLL:", test_loss)
+#     test_loss = evaluate(model, test_data, criterion, bptt, device)
+#     print("Final test NLL:", test_loss)
