@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .hessian_safe_modules import MyTransformerEncoderLayer
+
 
 # -------------------------------------------------------
 # Positional Encoding
@@ -49,13 +51,21 @@ class TransformerLM(nn.Module):
         self.encoder = nn.Embedding(ntoken, ninp) #(batch, seq_lenght, ninp)
         self.pos_encoder = PositionalEncoding(ninp, dropout)
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=ninp,
-            nhead=nhead,
-            dim_feedforward=nhid,
-            dropout=dropout,
-            activation="relu",
-            # batch_first=True,  #(Batch, seq_length)
+        # #This is wehere multihead attention is used, scaled_dot_product_attention does not support 2. derivatives
+        # encoder_layer = nn.TransformerEncoderLayer(
+        #     d_model=ninp,
+        #     nhead=nhead,
+        #     dim_feedforward=nhid,
+        #     dropout=dropout,
+        #     activation="relu",
+        #     # batch_first=True,  #(Batch, seq_length)
+        # )
+        #Custom encoder layer that supports 2. derivative calculations
+        encoder_layer = MyTransformerEncoderLayer(
+                d_model=ninp,
+                nhead=nhead,
+                dim_feedforward=nhid,
+                dropout=dropout,
         )
 
         self.transformer_encoder = nn.TransformerEncoder(
