@@ -334,6 +334,16 @@ def make_lm_dataset(data_source, bptt):
         i += bptt
     return dataset
 
+def slice_lm_dataset(lm_chunks, max_tokens):
+    result = []
+    total = 0
+    for X, Y in lm_chunks:
+        tokens = X.numel()
+        if total + tokens > max_tokens:
+            break
+        result.append((X, Y))
+        total += tokens
+    return result
 
 def run_training(neigs,
                  eig_freq,
@@ -378,9 +388,9 @@ def run_training(neigs,
         if eig_freq > 0 and epoch % eig_freq == 0:
             print("  Computing Sharpness...")
             hessian_dataset = make_lm_dataset(train_data, bptt) #[(X,Y)] format
-
+            hessian_dataset = slice_lm_dataset(hessian_dataset, max_tokens=2500)
             eigvals = get_hessian_eigenvalues(
-                model, criterion, hessian_dataset[:4], neigs=neigs
+                model, criterion, hessian_dataset, neigs=neigs
             )
             eigs[epoch // eig_freq] = eigvals
             print("  Top eigenvalues:", eigvals.tolist())
