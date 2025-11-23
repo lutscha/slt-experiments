@@ -222,6 +222,8 @@ import torch
 import torch.nn as nn
 import math
 from torch.nn.utils import clip_grad_norm_
+from utilities import get_hessian_eigenvalues
+
 
 def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
     model.train()
@@ -272,10 +274,23 @@ def evaluate(model, data_source, criterion, bptt, device):
 
     return total_loss / ((seq_len - 1) // bptt)
 
-def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, ninp=100, nhead=1, nhid=100, nlayers=1, device="cuda"):
+def run_training(neigs,
+                 eig_freq,
+                lr=0.1, 
+                 epochs=5, 
+                 bptt=35, 
+                 batch_size=20, 
+                 ninp=100, 
+                 nhead=1, 
+                 nhid=100, 
+                 nlayers=1, 
+                 device="cuda"):
 
     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
     ntokens = len(vocab)
+
+    # train_data = train_data[:2500]
+
 
     model = TransformerLM(
         ntoken=ntokens,
@@ -294,30 +309,16 @@ def run_training(lr=0.1, epochs=5, bptt=35, batch_size=20, ninp=100, nhead=1, nh
         val_loss = evaluate(model, valid_data, criterion, bptt, device)
         print(f"Epoch {epoch} | Train NLL {train_loss:.2f} | Val NLL {val_loss:.2f}")
 
+        if eig_freq > 0 and epoch % eig_freq == 0:
+            print("  Computing eigenvalues...")
+            eigvals = get_hessian_eigenvalues(
+                model, criterion, train_data[2500:], neigs=neigs
+            )
+            # eigs[epoch // eig_freq] = eigvals
+            print("  Top eigenvalues:", eigvals.tolist())
+
+
+
     test_loss = evaluate(model, test_data, criterion, bptt, device)
     print("Final test NLL:", test_loss)
 
-# def run_training(lr=0.1,wd=0.0, epochs=5, bptt=35, batch_size=20, device="cuda"):
-
-#     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
-#     ntokens = len(vocab)
-
-#     model = TransformerLM(
-#         ntoken=ntokens,
-#         ninp=200,
-#         nhead=2,
-#         nhid=200,
-#         nlayers=2,
-#         dropout=0.0
-#     ).to(device)
-
-#     criterion = nn.NLLLoss()
-#     optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
-
-#     for epoch in range(epochs):
-#         train_loss = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
-#         val_loss = evaluate(model, valid_data, criterion, bptt, device)
-#         print(f"Epoch {epoch} | Train NLL {train_loss:.2f} | Val NLL {val_loss:.2f}")
-
-#     test_loss = evaluate(model, test_data, criterion, bptt, device)
-#     print("Final test NLL:", test_loss)
