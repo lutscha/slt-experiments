@@ -238,37 +238,71 @@ def save_files_final(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
         torch.save(arr, f"{directory}/{arr_name}_final.pt")
 
 
+# def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
+#     model.train()
+#     total_loss = 0
+#     total_tokens = 0
+#     ntokens = model.decoder.out_features
+#     seq_len, batch_size = train_data.size()
+
+#     i = 0
+#     optimizer.zero_grad()
+#     num_chunks = (seq_len-1) // bptt
+#     losses = []
+#     while i < seq_len - 1:
+#         data, targets = get_batch(train_data, i, bptt)
+#         data = data.to(device)
+#         targets = targets.to(device)
+
+#         output = model(data)
+#         loss_unscaled = criterion(output.reshape(-1, ntokens), targets)
+#         loss = loss_unscaled/num_chunks
+#         loss.backward()
+#         loss = criterion(output.reshape(-1, ntokens), targets)
+#         losses.append(loss)
+#         # total_loss += loss_unscaled.item()*targets.numel()
+#         total_loss += loss.item()*targets.numel()
+#         i += bptt
+#         total_tokens += targets.numel()
+#     full_loss = sum(losses)
+#     full_loss.backward()
+#     clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
+#     optimizer.step()
+#     return total_loss / total_tokens
+
 def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
     model.train()
-    total_loss = 0
-    total_tokens = 0
     ntokens = model.decoder.out_features
     seq_len, batch_size = train_data.size()
 
-    i = 0
     optimizer.zero_grad()
-    num_chunks = (seq_len-1) // bptt
-    losses = []
+    total_loss = 0
+    total_tokens = 0
+
+    i = 0
     while i < seq_len - 1:
         data, targets = get_batch(train_data, i, bptt)
         data = data.to(device)
         targets = targets.to(device)
 
+        # Forward
         output = model(data)
-        # loss_unscaled = criterion(output.reshape(-1, ntokens), targets)
-        # loss = loss_unscaled/num_chunks
-        # loss.backward()
         loss = criterion(output.reshape(-1, ntokens), targets)
-        losses.append(loss)
-        # total_loss += loss_unscaled.item()*targets.numel()
-        total_loss += loss.item()*targets.numel()
-        i += bptt
+
+        # Backward (accumulated gradient)
+        loss.backward()    # retain_graph=False by default → SAFE
+
+        total_loss += loss.item() * targets.numel()
         total_tokens += targets.numel()
-    full_loss = sum(losses)
-    full_loss.backward()
-    clip_grad_norm_(model.parameters(), 0.5)  # Cohen uses this
+        i += bptt
+
+    # Now apply the full accumulated gradient
+    clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
+
     return total_loss / total_tokens
+
+
 
 def evaluate(model, data_source, criterion, bptt, device):
     model.eval()
