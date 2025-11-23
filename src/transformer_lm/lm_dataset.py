@@ -30,8 +30,14 @@ def load_wikitext2(bptt=35, batch_size=20, min_freq=2):
     cache_file = os.path.join(DATASETS_FOLDER, "wikitext2_cached.pt")
 
     if os.path.exists(cache_file):
+
+        from torch.serialization import add_safe_globals
+        from .vocab import Vocab
+        add_safe_globals([Vocab])
+
+
         print("✓ Loading WikiText-2 from cache:", cache_file)
-        saved = torch.load(cache_file)
+        saved = torch.load(cache_file, weights_only=False)
         return (
             saved["train_data"],
             saved["valid_data"],
