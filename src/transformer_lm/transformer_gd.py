@@ -321,11 +321,11 @@ def run_training(neigs,
         print(f"Epoch {epoch} | Train NLL {train_loss:.2f} | Val NLL {val_loss:.2f}")
 
         if eig_freq > 0 and epoch % eig_freq == 0:
-            print("  Computing eigenvalues...")
-            hessian_dataset = make_lm_dataset(train_data[2500:], bptt)
+            print("  Computing Sharpness...")
+            hessian_dataset = make_lm_dataset(train_data, bptt)
 
             eigvals = get_hessian_eigenvalues(
-                model, criterion, hessian_dataset, neigs=neigs
+                model, criterion, hessian_dataset[:4], neigs=neigs
             )
             # eigs[epoch // eig_freq] = eigvals
             print("  Top eigenvalues:", eigvals.tolist())
