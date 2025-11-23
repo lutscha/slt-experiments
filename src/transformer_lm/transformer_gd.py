@@ -217,12 +217,25 @@ from .lm_dataset import load_wikitext2, get_batch
 
 
 # transformer_train_new.py
-
+import os
 import torch
 import torch.nn as nn
 import math
 from torch.nn.utils import clip_grad_norm_
 from utilities import get_hessian_eigenvalues
+from typing import List, Tuple, Iterable
+
+def get_directory(dataset: str, lr: float, wd: float= 0.0):
+    """Return the directory in which the results should be saved."""
+    results_dir = os.environ["RESULTS"]
+    directory = f"{results_dir}/{dataset}/lr_{lr}/wd_{wd}"
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+def save_files_final(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
+    """Save a bunch of tensors."""
+    for (arr_name, arr) in arrays:
+        torch.save(arr, f"{directory}/{arr_name}_final.pt")
 
 
 def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
@@ -300,7 +313,11 @@ def run_training(neigs,
     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
     ntokens = len(vocab)
 
-    # train_data = train_data[:2500]
+    save_dir = get_directory(dataset='wikitext2', lr=lr)
+    train_loss, val_loss, train_acc, test_acc = \
+        torch.zeros(epochs), torch.zeros(epochs), torch.zeros(epochs), torch.zeros(epochs)
+    eigs = torch.zeros(epochs // eig_freq if eig_freq >= 0 else 0, neigs)
+
 
 
     model = TransformerLM(
@@ -316,22 +333,25 @@ def run_training(neigs,
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
     for epoch in range(epochs):
-        train_loss = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
-        val_loss = evaluate(model, valid_data, criterion, bptt, device)
-        print(f"Epoch {epoch} | Train NLL {train_loss:.2f} | Val NLL {val_loss:.2f}")
+        train_loss[epoch] = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
+        val_loss[epoch] = evaluate(model, valid_data, criterion, bptt, device)
+        print(f"Epoch {epoch} | Train NLL {train_loss[epoch]:.2f} | Val NLL {val_loss[epoch]:.2f}")
+
 
         if eig_freq > 0 and epoch % eig_freq == 0:
             print("  Computing Sharpness...")
-            hessian_dataset = make_lm_dataset(train_data, bptt)
+            hessian_dataset = make_lm_dataset(train_data, bptt) #[(X,Y)] format
 
             eigvals = get_hessian_eigenvalues(
                 model, criterion, hessian_dataset[:4], neigs=neigs
             )
-            # eigs[epoch // eig_freq] = eigvals
+            eigs[epoch // eig_freq] = eigvals
             print("  Top eigenvalues:", eigvals.tolist())
 
 
 
     test_loss = evaluate(model, test_data, criterion, bptt, device)
     print("Final test NLL:", test_loss)
-
+    save_files_final(save_dir,
+                    [("eigs", eigs[:epoch // eig_freq + 1]),
+                    ("train_loss", train_loss[:epoch + 1]), ("test_loss", val_loss[:epoch + 1])])
