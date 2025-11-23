@@ -1,8 +1,10 @@
 # lm_dataset_new.py
-
+import os
 import torch
 from datasets import load_dataset
 from .vocab import build_vocab_from_iterator
+
+DATASETS_FOLDER = os.environ["DATASETS"]
 
 
 def tokenize(text):
@@ -24,6 +26,20 @@ def get_batch(source, i, bptt):
 
 
 def load_wikitext2(bptt=35, batch_size=20, min_freq=2):
+    os.makedirs(DATASETS_FOLDER, exist_ok=True)
+    cache_file = os.path.join(DATASETS_FOLDER, "wikitext2_cached.pt")
+
+    if os.path.exists(cache_file):
+        print("✓ Loading WikiText-2 from cache:", cache_file)
+        saved = torch.load(cache_file)
+        return (
+            saved["train_data"],
+            saved["valid_data"],
+            saved["test_data"],
+            saved["vocab"],
+        )
+    print("⚠ Cache not found. Downloading WikiText-2...")
+
     ds = load_dataset("Salesforce/wikitext", "wikitext-2-v1")
 
     # 1) Build vocab using YOUR class
@@ -59,5 +75,16 @@ def load_wikitext2(bptt=35, batch_size=20, min_freq=2):
 
     print("✓ Vocabulary OK")
     print("✓ Token IDs all within range")
+
+    print("✓ Saving preprocessed data to:", cache_file)
+    torch.save(
+        {
+            "train_data": train_data,
+            "valid_data": valid_data,
+            "test_data": test_data,
+            "vocab": vocab,
+        },
+        cache_file,
+    )
 
     return train_data, valid_data, test_data, vocab
