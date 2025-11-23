@@ -274,6 +274,17 @@ def evaluate(model, data_source, criterion, bptt, device):
 
     return total_loss / ((seq_len - 1) // bptt)
 
+def make_lm_dataset(data_source, bptt):
+    seq_len, batch_size = data_source.size()
+    dataset = []
+    i = 0
+    while i < seq_len - 1:
+        X, Y = get_batch(data_source, i, bptt)
+        dataset.append((X, Y))
+        i += bptt
+    return dataset
+
+
 def run_training(neigs,
                  eig_freq,
                 lr=0.1, 
@@ -311,8 +322,10 @@ def run_training(neigs,
 
         if eig_freq > 0 and epoch % eig_freq == 0:
             print("  Computing eigenvalues...")
+            hessian_dataset = make_lm_dataset(train_data[2500:], bptt)
+
             eigvals = get_hessian_eigenvalues(
-                model, criterion, train_data[2500:], neigs=neigs
+                model, criterion, hessian_dataset, neigs=neigs
             )
             # eigs[epoch // eig_freq] = eigvals
             print("  Top eigenvalues:", eigvals.tolist())
