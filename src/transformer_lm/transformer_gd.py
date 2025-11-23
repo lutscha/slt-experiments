@@ -99,6 +99,9 @@ def run_training(neigs,
                  device="cuda"):
 
     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
+    print("DEBUG: train_data shape =", train_data.shape)
+    print("DEBUG: valid_data shape =", valid_data.shape)
+    print("DEBUG: test_data  shape =", test_data.shape)
     ntokens = len(vocab)
 
     save_dir = get_directory(dataset='wikitext2', lr=lr)
@@ -126,7 +129,12 @@ def run_training(neigs,
 
         if eig_freq > 0 and epoch % eig_freq == 0:
             print("  Computing Sharpness...")
+            print("DEBUG: train_data shape before Sharpness =", train_data.shape)
             hessian_dataset = make_lm_dataset(train_data, bptt) #[(X,Y)] format
+            print("DEBUG: number of LM chunks =", len(hessian_dataset))
+
+            if len(hessian_dataset) > 0:
+                print("DEBUG: first chunk shape =", hessian_dataset[0][0].shape)
             eigvals = get_hessian_eigenvalues(
                 model, criterion, hessian_dataset[:1], neigs=neigs #Gives (35*batchsize) train examples for hessian compute
             )
