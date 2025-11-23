@@ -4,7 +4,8 @@ from typing import Tuple
 from torch.utils.data import TensorDataset
 from cifar import load_cifar
 from synthetic import make_chebyshev_dataset, make_linear_dataset
-
+from transformer_lm.vocab import build_vocab_from_iterator, Vocab
+from torch.nn.utils.rnn import pad_sequence
 
 from typing import Union, Tuple, List
 
