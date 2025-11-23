@@ -41,10 +41,12 @@ class SlowButCorrectMultiheadAttention(nn.Module):
 
         if attn_mask is not None:
             # Convert (S,T) -> (S,1,1,T) for broadcasting
-            mask = attn_mask.unsqueeze(1).unsqueeze(1)
-            scores = scores + mask
+            # mask = attn_mask.unsqueeze(1).unsqueeze(1)
+            # scores = scores + mask
+            mask = attn_mask.unsqueeze(1).unsqueeze(1)  # (S,1,1,T)
+            scores = scores.masked_fill(mask == float("-inf"), -1e9)
 
-        attn = F.softmax(scores, dim=2)  # attention along "t"
+        attn = F.softmax(scores, dim=3)  # attention along "t"
         attn = F.dropout(attn, p=self.dropout, training=self.training)
 
         out = torch.einsum("sbht,tbhd->sbhd", attn, v)
