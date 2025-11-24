@@ -105,7 +105,7 @@ def run_training(neigs,
     save_dir = get_directory(dataset='wikitext2', lr=lr)
     train_loss, val_loss, train_acc, test_acc = \
         torch.zeros(epochs), torch.zeros(epochs), torch.zeros(epochs), torch.zeros(epochs)
-    eigs = torch.zeros(epochs // eig_freq if eig_freq >= 0 else 0, neigs)
+    eigs = torch.zeros((epochs // eig_freq)+1 if eig_freq > 0 else 0, neigs)
 
     torch.manual_seed(seed)
     model = TransformerLM(
@@ -120,7 +120,7 @@ def run_training(neigs,
     criterion = nn.NLLLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
 
-    for epoch in range(epochs):
+    for epoch in range(0, epochs):
         train_loss[epoch] = train_one_epoch(model, train_data, optimizer, criterion, bptt, device)
         val_loss[epoch] = evaluate(model, valid_data, criterion, bptt, device)
         print(f"Epoch {epoch} | Train NLL {train_loss[epoch]:.2f} | Val NLL {val_loss[epoch]:.2f}")
@@ -130,12 +130,11 @@ def run_training(neigs,
             print("  Computing Sharpness...")
             
             hessian_dataset = make_lm_dataset(train_data, bptt) #[(X,Y)] format
-            print(f'hessian size: {len(hessian_dataset)}')
+           
             eigvals = get_hessian_eigenvalues(
                 model, criterion, hessian_dataset[:1], neigs=neigs #Gives (35*batchsize) train examples for hessian compute
             )
-            print(f'eig_size: {eigs.size}')
-            print( f'index {epoch// eig_freq}')
+            
             eigs[epoch // eig_freq] = eigvals
             print("  Top hessian eigenvalues:", eigvals.tolist())
 
