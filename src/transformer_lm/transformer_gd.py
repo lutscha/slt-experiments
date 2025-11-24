@@ -8,6 +8,7 @@ import math
 from torch.nn.utils import clip_grad_norm_
 from utilities import get_hessian_eigenvalues
 from typing import List, Tuple, Iterable
+from utilities import save_files, save_files_final
 
 def get_directory(dataset: str, lr: float, wd: float= 0.0):
     """Return the directory in which the results should be saved."""
@@ -15,11 +16,6 @@ def get_directory(dataset: str, lr: float, wd: float= 0.0):
     directory = f"{results_dir}/{dataset}/lr_{lr}/wd_{wd}"
     os.makedirs(directory, exist_ok=True)
     return directory
-
-def save_files_final(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
-    """Save a bunch of tensors."""
-    for (arr_name, arr) in arrays:
-        torch.save(arr, f"{directory}/{arr_name}_final.pt")
 
 def train_one_epoch(model, train_data, optimizer, criterion, bptt, device):
     model.train()
@@ -97,16 +93,21 @@ def run_training(neigs,
                  nhid=100, 
                  nlayers=1, 
                  wd = 0.0,
-                 device="cuda"):
+                 device="cuda",
+                 seed=0,
+                 save_model = False,
+                 save_freq = -1):
 
     train_data, valid_data, test_data, vocab = load_wikitext2(bptt, batch_size)
     ntokens = len(vocab)
 
+    
     save_dir = get_directory(dataset='wikitext2', lr=lr)
     train_loss, val_loss, train_acc, test_acc = \
         torch.zeros(epochs), torch.zeros(epochs), torch.zeros(epochs), torch.zeros(epochs)
     eigs = torch.zeros(epochs // eig_freq if eig_freq >= 0 else 0, neigs)
 
+    torch.manual_seed(seed)
     model = TransformerLM(
         ntoken=ntokens,
         ninp=ninp,
@@ -133,12 +134,20 @@ def run_training(neigs,
                 model, criterion, hessian_dataset[:1], neigs=neigs #Gives (35*batchsize) train examples for hessian compute
             )
             eigs[epoch // eig_freq] = eigvals
-            print("  Top eigenvalues:", eigvals.tolist())
+            print("  Top hessian eigenvalues:", eigvals.tolist())
 
-
+        if save_freq != -1 and epoch % save_freq == 0:
+            save_files(save_dir, [("eigs", eigs[:epoch // eig_freq+1]),
+                                   ("train_loss", train_loss[:epoch+1]), ("test_loss", val_loss[:epoch+1]),
+                                  ])
+            if save_model:
+                torch.save(model.state_dict(), f'{save_dir}/snapshot')
 
     test_loss = evaluate(model, test_data, criterion, bptt, device)
     print("Final test NLL:", test_loss)
     save_files_final(save_dir,
                     [("eigs", eigs[:epoch // eig_freq + 1]),
                     ("train_loss", train_loss[:epoch + 1]), ("test_loss", val_loss[:epoch + 1])])
+    
+    if save_model:
+        torch.save(model.state_dict(), f"{save_dir}/snapshot_final")
