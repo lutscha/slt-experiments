@@ -130,9 +130,12 @@ def run_training(neigs,
             print("  Computing Sharpness...")
             
             hessian_dataset = make_lm_dataset(train_data, bptt) #[(X,Y)] format
+            print(f'hessian size: {hessian_dataset.size}')
             eigvals = get_hessian_eigenvalues(
                 model, criterion, hessian_dataset[:1], neigs=neigs #Gives (35*batchsize) train examples for hessian compute
             )
+            print(f'eig_size: {eigs.size}')
+            print( f'index {epoch// eig_freq}')
             eigs[epoch // eig_freq] = eigvals
             print("  Top hessian eigenvalues:", eigvals.tolist())
 
