@@ -137,17 +137,19 @@ def run_training(neigs,
             print("  Top hessian eigenvalues:", eigvals.tolist())
 
         if save_freq != -1 and epoch % save_freq == 0:
-            save_files(save_dir, [("eigs", eigs[:epoch // eig_freq+1]),
-                                   ("train_loss", train_loss[:epoch+1]), ("test_loss", val_loss[:epoch+1]),
+            print('.....saving weights')
+            save_files(save_dir, [("eigs", eigs[:epoch // eig_freq]),
+                                   ("train_loss", train_loss[:epoch]), ("test_loss", val_loss[:epoch]),
                                   ])
             if save_model:
+                print('.....saving model checkpoint')
                 torch.save(model.state_dict(), f'{save_dir}/snapshot')
 
     test_loss = evaluate(model, test_data, criterion, bptt, device)
     print("Final test NLL:", test_loss)
     save_files_final(save_dir,
-                    [("eigs", eigs[:epoch // eig_freq + 1]),
-                    ("train_loss", train_loss[:epoch + 1]), ("test_loss", val_loss[:epoch + 1])])
+                    [("eigs", eigs[:epoch // eig_freq]),
+                    ("train_loss", train_loss[:epoch]), ("test_loss", val_loss[:epoch])])
     
     if save_model:
         torch.save(model.state_dict(), f"{save_dir}/snapshot_final")
