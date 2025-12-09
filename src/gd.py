@@ -75,11 +75,6 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         for (X, y) in iterate_dataset(train_dataset, physical_batch_size):
             loss = loss_fn(network(X.to(device)), y.to(device)) / len(train_dataset)
             loss.backward()
-
-        if norm_freq != -1 and step % norm_freq == 0:
-            for i, module in linear_layers:
-                grad_norms[step // norm_freq, i] = torch.norm(module.weight.grad)
-        
         optimizer.step()
 
     # save_files_final(directory,
@@ -95,6 +90,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
+                    #   ("input_norms", torch.tensor(Xs[1:])),
+                    #   ("output_norms", torch.tensor(Ys[1:])),
+                    #   ("weight_norms", torch.tensor(Ws[1:])),
+                    #   ("input_norms", torch.tensor(gWs[2:]))])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
@@ -105,7 +104,6 @@ if __name__ == "__main__":
     parser.add_argument("arch_id", type=str, help="which network architectures to train")
     parser.add_argument("loss", type=str, choices=["ce", "mse"], help="which loss function to use")
     parser.add_argument("lr", type=float, help="the learning rate")
-    parser.add_argument("weight_decay", type=float, help="the weight decay of the GD")
     parser.add_argument("max_steps", type=int, help="the maximum number of gradient steps to train for")
     parser.add_argument("--opt", type=str, choices=["gd", "polyak", "nesterov"],
                         help="which optimization algorithm to use", default="gd")
@@ -123,8 +121,6 @@ if __name__ == "__main__":
     parser.add_argument("--nproj", type=int, default=0, help="the dimension of random projections")
     parser.add_argument("--iterate_freq", type=int, default=-1,
                         help="the frequency at which we save random projections of the iterates")
-    parser.add_argument("--norm_freq", type=int, default=-1,
-                        help="the frequency at which we save the norm of the gradient of linear layers")
     parser.add_argument("--abridged_size", type=int, default=5000,
                         help="when computing top Hessian eigenvalues, use an abridged dataset of this size")
     parser.add_argument("--save_freq", type=int, default=-1,
@@ -135,6 +131,6 @@ if __name__ == "__main__":
 
     main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
          neigs=args.neigs, physical_batch_size=args.physical_batch_size, eig_freq=args.eig_freq,
-         iterate_freq=args.iterate_freq, save_freq=args.save_freq, norm_freq=args.norm_freq, save_model=args.save_model,
-         weight_decay=args.weight_decay, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
-         acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed)
+         iterate_freq=args.iterate_freq, save_freq=args.save_freq, save_model=args.save_model, beta=args.beta,
+         nproj=args.nproj, loss_goal=args.loss_goal, acc_goal=args.acc_goal, abridged_size=args.abridged_size,
+         seed=args.seed)
