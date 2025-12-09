@@ -13,9 +13,10 @@ from data import load_dataset, take_first, DATASETS
 
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
-         norm_freq: int = -1, save_model: bool = False, weight_decay: float = 0.0 ,beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0):
-    directory = get_gd_directory(dataset, lr, weight_decay, arch_id, seed, opt, loss, beta)
+         save_model: bool = False, beta: float = 0.0, nproj: int = 0,
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None):
+    print(f'wd:{wd}')
+    directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
     print(f"output directory: {directory}")
     makedirs(directory, exist_ok=True)
 
@@ -25,44 +26,41 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     loss_fn, acc_fn = get_loss_and_acc(loss)
 
     torch.manual_seed(seed)
-    network = load_architecture(arch_id, dataset).cuda()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    network = load_architecture(arch_id, dataset).to(device)
 
-    torch.manual_seed(7)
+    if resume_model is not None:
+        print(f"Loading pretrained model weights from: {resume_model}")
+        checkpoint = torch.load(resume_model, map_location=device)
+        network.load_state_dict(checkpoint)
+
+    # torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
-    optimizer = get_gd_optimizer(network.parameters(), opt, lr, weight_decay, beta)
+    optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd)
 
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
-    
-    linear_layer_count = 0
-    linear_layers = []
-    for module in network.modules():
-        if isinstance(module, torch.nn.Linear):
-            linear_layers.append((linear_layer_count, module))
-            linear_layer_count += 1
-
-    grad_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
-
-    activation_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
-    activation_update_norms = torch.zeros(max_steps // norm_freq if norm_freq >= 0 else 0, linear_layer_count)
+   
 
     for step in range(0, max_steps):
-
+        
         train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
-
+        
         if eig_freq != -1 and step % eig_freq == 0:
+           
             eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                physical_batch_size=physical_batch_size)
-            print("eigenvalues: ", eigs[step//eig_freq, :])
+                                                                physical_batch_size=physical_batch_size)                                                 
+            print("eigenvalues: ", eigs[step // eig_freq, :])
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
 
+        
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
@@ -75,7 +73,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
         optimizer.zero_grad()
         for (X, y) in iterate_dataset(train_dataset, physical_batch_size):
-            loss = loss_fn(network(X.cuda()), y.cuda()) / len(train_dataset)
+            loss = loss_fn(network(X.to(device)), y.to(device)) / len(train_dataset)
             loss.backward()
 
         if norm_freq != -1 and step % norm_freq == 0:
@@ -84,9 +82,17 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         optimizer.step()
 
+    # save_files_final(directory,
+    #                  [("eigs", eigs[:(step + 1) // eig_freq]), ("low_traces", low_traces[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+    #                   ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
+    #                   ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
+    #                 #   ("input_norms", torch.tensor(Xs[1:])),
+    #                 #   ("output_norms", torch.tensor(Ys[1:])),
+    #                 #   ("weight_norms", torch.tensor(Ws[1:])),
+    #                 #   ("input_norms", torch.tensor(gWs[2:]))])
+    num_eigs = num_eigs = (step // eig_freq) + 1
     save_files_final(directory,
-                     [("eigs", eigs[:(step + 1) // eig_freq]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("grad_norms", grad_norms[:(step + 1) // norm_freq]),
+                     [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
     if save_model:

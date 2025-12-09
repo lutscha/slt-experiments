@@ -2,3 +2,6 @@
 eos.zip
 data
 notebooks
+results
+run.py
+test.ipynb

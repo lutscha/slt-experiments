@@ -10,17 +10,17 @@ from torch.optim import SGD
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import Dataset, DataLoader
 import os
-
+from transformer_lm.lm_model import generate_square_subsequent_mask
 # the default value for "physical batch size", which is the largest batch size that we try to put on the GPU
 DEFAULT_PHYS_BS = 1000
 
 
-def get_gd_directory(dataset: str, lr: float, weight_decay:float, arch_id: str, seed: int, opt: str, loss: str, beta: float = None):
+def get_gd_directory(dataset: str, lr: float, arch_id: str, seed: int, opt: str, loss: str,wd: float, beta: float = None):
     """Return the directory in which the results should be saved."""
     results_dir = os.environ["RESULTS"]
     directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/{opt}/{weight_decay}"
     if opt == "gd":
-        return f"{directory}/lr_{lr}"
+        return f"{directory}/lr_{lr}/wd_{wd}"
     elif opt == "polyak" or opt == "nesterov":
         return f"{directory}/lr_{lr}_beta_{beta}"
 
@@ -37,9 +37,9 @@ def get_modified_flow_directory(dataset: str, arch_id: str, seed: int, loss: str
     return f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/modified_flow_lr_{gd_lr}/tick_{tick}"
 
 
-def get_gd_optimizer(parameters, opt: str, lr: float, weight_decay: float, momentum: float) -> Optimizer:
+def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float, wd: float) -> Optimizer:
     if opt == "gd":
-        return SGD(parameters, lr=lr, weight_decay=weight_decay)
+        return SGD(parameters, lr=lr, weight_decay=wd)
     elif opt == "polyak":
         return SGD(parameters, lr=lr, momentum=momentum, nesterov=False)
     elif opt == "nesterov":
@@ -49,21 +49,44 @@ def get_gd_optimizer(parameters, opt: str, lr: float, weight_decay: float, momen
 def save_files(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
     """Save a bunch of tensors."""
     for (arr_name, arr) in arrays:
-        torch.save(arr, f"{directory}/{arr_name}")
+        torch.save(arr, f"{directory}/{arr_name}.pt")
 
 
 def save_files_final(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
     """Save a bunch of tensors."""
     for (arr_name, arr) in arrays:
-        torch.save(arr, f"{directory}/{arr_name}_final")
+        torch.save(arr, f"{directory}/{arr_name}_final.pt")
 
 
-def iterate_dataset(dataset: Dataset, batch_size: int):
-    """Iterate through a dataset, yielding batches of data."""
+# def iterate_dataset(dataset: Dataset, batch_size: int):
+#     """Iterate through a dataset, yielding batches of data."""
+#     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     for (batch_X, batch_y) in loader:
+#         yield batch_X.to(device), batch_y.to(device)
+
+def iterate_dataset(dataset, batch_size):
+    """
+    Iterate through dataset, yielding batches of data.
+    Detects when dataset samples are already batched (LM case)
+    and skips DataLoader batching in that case.
+    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Peek at the first sample
+    sample_X, sample_y = dataset[0]
+
+    # --- CASE 1: LM dataset (samples are already mini-batches) ---
+    if sample_X.dim() == 2:     # X is (seq_len, batch)
+        for X, y in dataset:
+            yield X.to(device), y.to(device)
+        return
+
+    # --- CASE 2: regular dataset (MLP/CNN), use normal mini-batching ---
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    for (batch_X, batch_y) in loader:
-        yield batch_X.cuda(), batch_y.cuda()
-
+    for batch_X, batch_y in loader:
+        yield batch_X.to(device), batch_y.to(device)
 
 def compute_losses(network: nn.Module, loss_functions: List[nn.Module], dataset: Dataset,
                    batch_size: int = DEFAULT_PHYS_BS):
@@ -84,29 +107,89 @@ def get_loss_and_acc(loss: str):
         return SquaredLoss(), SquaredAccuracy()
     elif loss == "ce":
         return nn.CrossEntropyLoss(reduction='sum'), AccuracyCE()
-    raise NotImplementedError(f"no such loss function: {loss}")
 
+    raise NotImplementedError(f"no such loss function: {loss}")
+    
+
+
+# def compute_hvp(network: nn.Module, loss_fn: nn.Module,
+#                 dataset: Dataset, vector: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS, P: Tensor = None):
+#     """Compute a Hessian-vector product.
+    
+#     If the optional preconditioner P is not set to None, return P^{-1/2} H P^{-1/2} v rather than H v.
+#     """
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     p = len(parameters_to_vector(network.parameters()))
+#     n = len(dataset)
+#     hvp = torch.zeros(p, dtype=torch.float, device=device)
+#     vector = vector.to(device)
+#     if P is not None:
+#         vector = vector / P.to(device).sqrt()
+#     for (X, y) in iterate_dataset(dataset, physical_batch_size):
+#         loss = loss_fn(network(X), y) / n
+#         grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
+#         dot = parameters_to_vector(grads).mul(vector).sum()
+#         grads = [g.contiguous() for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
+#         hvp += parameters_to_vector(grads)
+#     if P is not None:
+#         hvp = hvp / P.to(device).sqrt()
+#     return hvp
 
 def compute_hvp(network: nn.Module, loss_fn: nn.Module,
                 dataset: Dataset, vector: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS, P: Tensor = None):
-    """Compute a Hessian-vector product.
-    
-    If the optional preconditioner P is not set to None, return P^{-1/2} H P^{-1/2} v rather than H v.
-    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     p = len(parameters_to_vector(network.parameters()))
     n = len(dataset)
-    hvp = torch.zeros(p, dtype=torch.float, device='cuda')
-    vector = vector.cuda()
+    hvp = torch.zeros(p, dtype=torch.float, device=device)
+    vector = vector.to(device)
     if P is not None:
-        vector = vector / P.cuda().sqrt()
-    for (X, y) in iterate_dataset(dataset, physical_batch_size):
-        loss = loss_fn(network(X), y) / n
-        grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
-        dot = parameters_to_vector(grads).mul(vector).sum()
-        grads = [g.contiguous() for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
-        hvp += parameters_to_vector(grads)
+        vector = vector / P.to(device).sqrt()
+
+    # Detect if this is a language model dataset (already mini-batches)
+    sample_X, sample_y = dataset[0]
+    is_lm_dataset = sample_X.dim() == 2
+
+    if is_lm_dataset:
+        # ============================================================
+        # LANGUAGE MODEL CASE (seq_len x batch_size)
+        # ============================================================
+        for X, y in dataset:
+            X = X.to(device)
+            y = y.to(device)
+
+            seq_len = X.size(0)
+            src_mask = generate_square_subsequent_mask(seq_len).to(device)
+
+            logits = network(X, src_mask)                # (seq, batch, vocab)
+            logits = logits.reshape(-1, logits.size(-1)) # (seq*batch, vocab)
+            y_flat = y.reshape(-1)                       # (seq*batch)
+
+            loss = loss_fn(logits, y_flat) / n
+
+            grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
+            dot = parameters_to_vector(grads).mul(vector).sum()
+            grads = [g.contiguous()
+                     for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
+            hvp += parameters_to_vector(grads)
+
+    else:
+        # ============================================================
+        # CNN / MLP CASE (normal samples, use batching)
+        # ============================================================
+        for X, y in iterate_dataset(dataset, physical_batch_size):
+            logits = network(X)
+            loss = loss_fn(logits, y) / n
+
+            grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
+            dot = parameters_to_vector(grads).mul(vector).sum()
+            grads = [g.contiguous()
+                     for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
+            hvp += parameters_to_vector(grads)
+
     if P is not None:
-        hvp = hvp / P.cuda().sqrt()
+        hvp = hvp / P.to(device).sqrt()
+
     return hvp
 
 
@@ -115,7 +198,8 @@ def lanczos(matrix_vector, dim: int, neigs: int):
     (which we can access via matrix-vector products). """
 
     def mv(vec: np.ndarray):
-        gpu_vec = torch.tensor(vec, dtype=torch.float).cuda()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        gpu_vec = torch.tensor(vec, dtype=torch.float).to(device)
         return matrix_vector(gpu_vec)
 
     operator = LinearOperator((dim, dim), matvec=mv)
@@ -132,16 +216,30 @@ def get_hessian_eigenvalues(network: nn.Module, loss_fn: nn.Module, dataset: Dat
     """
     hvp_delta = lambda delta: compute_hvp(network, loss_fn, dataset,
                                           delta, physical_batch_size=physical_batch_size, P=P).detach().cpu()
+    
     nparams = len(parameters_to_vector((network.parameters())))
     evals, evecs = lanczos(hvp_delta, nparams, neigs=neigs)
+
+    # trace_est = trace_estimate(hvp_delta, nparams) #Estimate trace via Hutchinson estimator
+    # low_trace = trace_est - evals.sum().item() #Estimates sum of N-50 eigenvalues of Hessian
+
     return evals
+
+def trace_estimate(hvp_fun, nparams, num_samples=30):
+    trace_est=0.0
+    for _ in range(num_samples):
+        z = torch.randn(nparams)
+        Hz = hvp_fun(z)
+        trace_est +=torch.dot(z, Hz)
+    return trace_est.item() / num_samples
 
 
 def compute_gradient(network: nn.Module, loss_fn: nn.Module,
                      dataset: Dataset, physical_batch_size: int = DEFAULT_PHYS_BS):
     """ Compute the gradient of the loss function at the current network parameters. """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     p = len(parameters_to_vector(network.parameters()))
-    average_gradient = torch.zeros(p, device='cuda')
+    average_gradient = torch.zeros(p, device=device)
     for (X, y) in iterate_dataset(dataset, physical_batch_size):
         batch_loss = loss_fn(network(X), y) / len(dataset)
         batch_gradient = parameters_to_vector(torch.autograd.grad(batch_loss, inputs=network.parameters()))
