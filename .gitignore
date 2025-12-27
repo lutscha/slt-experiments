@@ -1,7 +1,4 @@
-.venv
-eos.zip
-data
-notebooks
-results
-run.py
-test.ipynb
+/datasets
+/experimental_results
+/src/__pycache__
+/src/transformer_lm/__pycache__

@@ -98,7 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("arch_id", type=str, help="which network architectures to train")
     parser.add_argument("loss", type=str, choices=["ce", "mse"], help="which loss function to use")
     parser.add_argument("lr", type=float, help="the learning rate")
-    parser.add_argument("weight_decay", type=float, help="the weight decay of the GD")
+    parser.add_argument("wd", type=float, help="the weight decay of the GD")
     parser.add_argument("max_steps", type=int, help="the maximum number of gradient steps to train for")
     parser.add_argument("--opt", type=str, choices=["gd", "polyak", "nesterov"],
                         help="which optimization algorithm to use", default="gd")
