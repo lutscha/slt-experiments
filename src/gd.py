@@ -122,5 +122,5 @@ if __name__ == "__main__":
     main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
          neigs=args.neigs, physical_batch_size=args.physical_batch_size, eig_freq=args.eig_freq,
          iterate_freq=args.iterate_freq, save_freq=args.save_freq, save_model=args.save_model,
-         weight_decay=args.weight_decay, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
+         wd=args.wd, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
          acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed)
