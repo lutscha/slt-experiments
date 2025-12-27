@@ -2,7 +2,6 @@ from os import makedirs
 
 import torch
 from torch.nn.utils import parameters_to_vector
-from torch.nn.functional import cosine_similarity
 
 import argparse
 
@@ -44,7 +43,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
-    kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
+   
 
     for step in range(0, max_steps):
         
@@ -54,13 +53,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         if eig_freq != -1 and step % eig_freq == 0:
            
-            evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs, physical_batch_size, device)
-            eigs[step // eig_freq, :] = evals                   
-            kappa[step // eig_freq] = cosine_similarity(parameters_to_vector(network.parameters()), evecs[0, :])
-
+            eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
+                                                                physical_batch_size=physical_batch_size)                                                 
             print("eigenvalues: ", eigs[step // eig_freq, :])
-            print("eigenvectors norms and shape: ", torch.norm(evecs, dim=1), evecs.shape)
-            print("kappa: ", kappa[step // eig_freq])
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())

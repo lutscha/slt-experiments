@@ -223,7 +223,7 @@ def get_hessian_eigenvalues(network: nn.Module, loss_fn: nn.Module, dataset: Dat
     # trace_est = trace_estimate(hvp_delta, nparams) #Estimate trace via Hutchinson estimator
     # low_trace = trace_est - evals.sum().item() #Estimates sum of N-50 eigenvalues of Hessian
 
-    return evals, evecs
+    return evals
 
 def trace_estimate(hvp_fun, nparams, num_samples=30):
     trace_est=0.0
