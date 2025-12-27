@@ -2,6 +2,7 @@ from os import makedirs
 
 import torch
 from torch.nn.utils import parameters_to_vector
+from torch.nn.functional import cosine_similarity
 
 import argparse
 
@@ -43,7 +44,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
-   
+    kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
 
     for step in range(0, max_steps):
         
@@ -53,9 +54,14 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         if eig_freq != -1 and step % eig_freq == 0:
            
-            eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
+            evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)                                                 
+            eigs[step // eig_freq, :] = evals
+            kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], parameters_to_vector(network.parameters()), dim=0).item()
+
             print("eigenvalues: ", eigs[step // eig_freq, :])
+            print("kappa: ", kappa[step // eig_freq])
+
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
@@ -78,11 +84,12 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         optimizer.step()
 
-    num_eigs = num_eigs = (step // eig_freq) + 1
+    num_eigs = (step // eig_freq) + 1
     save_files_final(directory,
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
-                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1])])
+                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
+                      ("kappa", kappa[:num_eigs])])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
