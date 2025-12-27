@@ -57,7 +57,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)                                                 
             eigs[step // eig_freq, :] = evals
-            kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], parameters_to_vector(network.parameters()), dim=0).item()
+            kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], parameters_to_vector(network.parameters()).cpu().detach(), dim=0).item()
 
             print("eigenvalues: ", eigs[step // eig_freq, :])
             print("kappa: ", kappa[step // eig_freq])
