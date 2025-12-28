@@ -8,7 +8,7 @@ import argparse
 
 from archs import load_architecture
 from utilities import get_gd_optimizer, get_gd_directory, get_loss_and_acc, compute_losses, \
-    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset
+    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, make_batch_stepper
 from data import load_dataset, take_first, DATASETS
 
 
@@ -23,6 +23,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     train_dataset, test_dataset = load_dataset(dataset, loss)
     abridged_train = take_first(train_dataset, abridged_size)
+    next_train_batch = make_batch_stepper(train_dataset, batch_size=physical_batch_size, shuffle=True)
 
     loss_fn, acc_fn = get_loss_and_acc(loss)
 
@@ -78,11 +79,13 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             break
 
         optimizer.zero_grad()
-        for (X, y) in iterate_dataset(train_dataset, physical_batch_size):
-            loss = loss_fn(network(X.to(device)), y.to(device)) / len(train_dataset)
-            loss.backward()
-        
+        X, y = next_train_batch()  # ONE minibatch per step
+        B = X.size(0)
+        loss = loss_fn(network(X), y) / B   # loss_fn is SUM reduction
+        loss.backward()
         optimizer.step()
+
+        
 
     num_eigs = (step // eig_freq) + 1
     save_files_final(directory,

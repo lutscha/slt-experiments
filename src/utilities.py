@@ -303,3 +303,50 @@ class VoidLoss(nn.Module):
     def forward(self, X, Y):
         return 0
 
+
+
+def make_batch_stepper(dataset, batch_size, shuffle=True):
+    """
+    Returns a function next_batch() that yields ONE batch each time.
+    For normal datasets uses DataLoader; for LM datasets (already batched) cycles dataset.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    sample_X, sample_y = dataset[0]
+
+    # LM case: dataset items are already batches
+    if sample_X.dim() == 2:
+        i = 0
+        n = len(dataset)
+
+        def next_batch():
+            nonlocal i
+            X, y = dataset[i]
+            i = (i + 1) % n
+            return X.to(device), y.to(device)
+
+        return next_batch
+
+    # Regular case: DataLoader batching
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=False)
+    it = iter(loader)
+
+    def next_batch():
+        nonlocal it
+        try:
+            X, y = next(it)
+        except StopIteration:
+            it = iter(loader)  # new epoch (reshuffles if shuffle=True)
+            X, y = next(it)
+        return X.to(device), y.to(device)
+
+    return next_batch
+
+
+
+
+
+
+
+
+
