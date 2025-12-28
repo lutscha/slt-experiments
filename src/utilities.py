@@ -20,7 +20,7 @@ def get_gd_directory(dataset: str, lr: float, arch_id: str, seed: int, opt: str,
     """Return the directory in which the results should be saved."""
     results_dir = os.environ["RESULTS"]
     directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/{opt}"
-    if opt == "gd":
+    if opt in ("gd", "sgd"):
         return f"{directory}/lr_{lr}/wd_{wd}"
     elif opt == "polyak" or opt == "nesterov":
         return f"{directory}/lr_{lr}_beta_{beta}"
