@@ -15,9 +15,9 @@ from data import load_dataset, take_first, DATASETS
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250):
     print(f'wd:{wd}')
-    directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
+    directory = get_gd_directory(dataset, lr, arch_id, seed, "sgd", loss, wd, beta)
     print(f"output directory: {directory}")
     makedirs(directory, exist_ok=True)
 
@@ -48,11 +48,13 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
 
     for step in range(0, max_steps):
-        
-        train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
-                                                           physical_batch_size)
-        test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
-        
+        print(step)
+        if step % eval_freq ==0: 
+            train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
+                                                            physical_batch_size)
+            test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
+            print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
+
         if eig_freq != -1 and step % eig_freq == 0:
            
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
@@ -72,8 +74,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
-
-        print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
+        
+        
 
         if (loss_goal != None and train_loss[step] < loss_goal) or (acc_goal != None and train_acc[step] > acc_goal):
             break
@@ -127,8 +129,7 @@ if __name__ == "__main__":
                         help="the frequency at which we save resuls")
     parser.add_argument("--save_model", type=bool, default=False,
                         help="if 'true', save model weights at end of training")
-    parser.add_argument("--mode", type=str, choices=["full", "minibatch"], default="full",
-                    help="full = full-batch GD step, minibatch = SGD step")
+    parser.add_argument("--eval_freq", type=str, default=250)
     parser.add_argument("--batch_size", type=int, default=128,
                         help="SGD minibatch size (used if mode=minibatch)")
     args = parser.parse_args()
