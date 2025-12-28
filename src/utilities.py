@@ -1,5 +1,6 @@
 from typing import List, Tuple, Iterable
 
+import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -224,6 +225,56 @@ def get_hessian_eigenvalues(network: nn.Module, loss_fn: nn.Module, dataset: Dat
     # low_trace = trace_est - evals.sum().item() #Estimates sum of N-50 eigenvalues of Hessian
 
     return evals, evecs
+
+
+
+def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
+    """Compute g^T H g / g^T g for one batch (inputs, targets) at the current model params."""
+    model.zero_grad(set_to_none=True)
+    # Forward pass and compute loss (assumed mean loss over the batch)
+    outputs = model(inputs)
+    loss = loss_fn(outputs, targets)
+    # Compute gradients w.r.t. parameters (creating graph for second-order calc)
+    grad_params = torch.autograd.grad(loss, model.parameters(), create_graph=True)
+    # Compute Hessian-vector product H*g (by taking gradient of the dot(grad, grad_outputs))
+    hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=grad_params, retain_graph=False)
+    # Compute g^T H g (dot product of grad and H*grad), and grad norm squared
+    gHg = sum((g * hvp).sum() for g, hvp in zip(grad_params, hv))
+    grad_norm_sq = sum((g**2).sum() for g in grad_params)
+    # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
+    return (gHg / (grad_norm_sq + 1e-12)).item()
+
+def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=1000, rel_error_tol=5e-3):
+    """Estimate E[g^T H g / g^T g] over random batches via Monte Carlo sampling."""
+    model.eval()  # Ensure model is in eval mode (no dropout, etc.) for consistency
+    sum_rq, sum_sq, count = 0.0, 0.0, 0
+    for inputs, targets in data_loader:
+        inputs, targets = inputs.to(next(model.parameters()).device), targets.to(next(model.parameters()).device)
+        # Compute Rayleigh quotient for this batch
+        rq = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
+        # Update running average and variance
+        count += 1
+        sum_rq += rq
+        sum_sq += rq * rq
+        if count >= 2:  # check relative error after at least 2 samples
+            mean = sum_rq / count
+            # (Using standard error of the mean as uncertainty estimate)
+            variance = (sum_sq / count) - mean**2
+            std_error = math.sqrt(abs(variance) / count)
+            if std_error / abs(mean) < rel_error_tol:
+                break
+        if count >= max_batches:
+            break
+    return sum_rq / count
+
+
+
+
+
+
+
+
+
 
 def trace_estimate(hvp_fun, nparams, num_samples=30):
     trace_est=0.0

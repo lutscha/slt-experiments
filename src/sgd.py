@@ -3,19 +3,20 @@ from os import makedirs
 import torch
 from torch.nn.utils import parameters_to_vector
 from torch.nn.functional import cosine_similarity
+from torch.utils.data import DataLoader
 
 import argparse
 
 from archs import load_architecture
 from utilities import get_gd_optimizer, get_gd_directory, get_loss_and_acc, compute_losses, \
-    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, make_batch_stepper
+    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, make_batch_stepper, compute_rayleigh_quotient, estimate_batch_sharpness
 from data import load_dataset, take_first, DATASETS
 
 
-def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
+def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size: int, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10):
     print(f'wd:{wd}')
     directory = get_gd_directory(dataset, lr, arch_id, seed, "sgd", loss, wd, beta)
     print(f"output directory: {directory}")
@@ -23,7 +24,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     train_dataset, test_dataset = load_dataset(dataset, loss)
     abridged_train = take_first(train_dataset, abridged_size)
-    next_train_batch = make_batch_stepper(train_dataset, batch_size=physical_batch_size, shuffle=True)
+    next_train_batch = make_batch_stepper(train_dataset, batch_size=batch_size, shuffle=True)
+    sharp_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     loss_fn, acc_fn = get_loss_and_acc(loss)
 
@@ -46,6 +48,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
+    bs = torch.zeros(max_steps // bs_freq if bs_freq >= 0 else 0)
 
     for step in range(0, max_steps):
         print(step)
@@ -54,6 +57,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                                                             physical_batch_size)
             test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
             print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
+
+        if step % bs_freq == 0:
+            bs[step // bs_freq] = estimate_batch_sharpness(network, sharp_loader, loss_fn)
+            print( "Batch sharpness", bs[step // bs_freq])
 
         if eig_freq != -1 and step % eig_freq == 0:
            
@@ -65,6 +72,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             print("eigenvalues: ", eigs[step // eig_freq, :])
             print("kappa: ", kappa[step // eig_freq])
 
+            
+
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
@@ -72,9 +81,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
+                                   ("bs", bs[:step // bs_freq])
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
-        
+
         
 
         if (loss_goal != None and train_loss[step] < loss_goal) or (acc_goal != None and train_acc[step] > acc_goal):
@@ -92,6 +102,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     num_eigs = (step // eig_freq) + 1
     save_files_final(directory,
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                      ("bs", bs),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
                       ("kappa", kappa[:num_eigs])])
