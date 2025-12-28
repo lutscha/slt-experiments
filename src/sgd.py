@@ -81,7 +81,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
         
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
-                                   ("bs", bs[:step // bs_freq])
+                                   ("bs", bs[:step // bs_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
 
