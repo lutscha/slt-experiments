@@ -244,8 +244,8 @@ def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
     # Compute Hessian-vector product H*g (by taking gradient of the dot(grad, grad_outputs))
     hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=v, retain_graph=False)
     # Compute g^T H g (dot product of grad and H*grad), and grad norm squared
-    gHg = sum((g * hvp).sum() for g, hvp in zip(grad_params, hv))
-    grad_norm_sq = sum((g**2).sum() for g in grad_params)
+    gHg = sum((vi * hvi).sum() for vi, hvi in zip(v, hv))
+    grad_norm_sq = sum((vi * vi).sum() for vi in v)
     # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
     return (gHg / (grad_norm_sq + 1e-12)).item()
 
