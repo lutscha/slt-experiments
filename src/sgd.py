@@ -16,7 +16,7 @@ from data import load_dataset, take_first, DATASETS
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size: int, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10, max_bs_batches=500):
     print(f'wd:{wd}')
     directory = get_gd_directory(dataset, lr, arch_id, seed, "sgd", loss, wd, beta)
     print(f"output directory: {directory}")
@@ -58,7 +58,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
             print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
 
         if step % bs_freq == 0:
-            bs[step // bs_freq] = estimate_batch_sharpness(network, sharp_loader, loss_fn)
+            bs[step // bs_freq] = estimate_batch_sharpness(network, sharp_loader, loss_fn, max_batches=max_bs_batches)
             print( "Batch sharpness", bs[step // bs_freq])
 
         if eig_freq != -1 and step % eig_freq == 0:

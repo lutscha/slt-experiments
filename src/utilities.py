@@ -249,7 +249,7 @@ def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
     # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
     return (gHg / (grad_norm_sq + 1e-12)).item()
 
-def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=1000, rel_error_tol=5e-3):
+def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=500, rel_error_tol=5e-3):
     """Estimate E[g^T H g / g^T g] over random batches via Monte Carlo sampling."""
     model.eval()  # Ensure model is in eval mode (no dropout, etc.) for consistency
     sum_rq, sum_sq, count = 0.0, 0.0, 0
