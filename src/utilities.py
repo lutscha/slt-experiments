@@ -247,20 +247,29 @@ def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
     gHg = sum((vi * hvi).sum() for vi, hvi in zip(v, hv))
     grad_norm_sq = sum((vi * vi).sum() for vi in v)
     # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
-    return (gHg / (grad_norm_sq + 1e-12)).item()
+    # return (gHg / (grad_norm_sq + 1e-12)).item()
+    return (gHg.item(), grad_norm_sq.item())
 
 def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=500, rel_error_tol=5e-3):
     """Estimate E[g^T H g / g^T g] over random batches via Monte Carlo sampling."""
     model.eval()  # Ensure model is in eval mode (no dropout, etc.) for consistency
-    sum_rq, sum_sq, count = 0.0, 0.0, 0
+    sum_gHg, sum_g2, count = 0.0, 0.0, 0
+    sum_rq, sum_sq = 0.0, 0.0
     for inputs, targets in data_loader:
         inputs, targets = inputs.to(next(model.parameters()).device), targets.to(next(model.parameters()).device)
         # Compute Rayleigh quotient for this batch
-        rq = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
+        # rq = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
+        gHg, g2 = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
         # Update running average and variance
         count += 1
+        
+        sum_gHg += gHg
+        sum_g2 += g2
+
+        rq = gHg / g2 + 1e-12
         sum_rq += rq
         sum_sq += rq * rq
+
         if count >= 2:  # check relative error after at least 2 samples
             mean = sum_rq / count
             # (Using standard error of the mean as uncertainty estimate)
@@ -270,7 +279,7 @@ def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=500, rel_e
                 break
         if count >= max_batches:
             break
-    return sum_rq / count
+    return sum_gHg / sum_g2
 
 
 
