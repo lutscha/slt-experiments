@@ -232,12 +232,17 @@ def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
     """Compute g^T H g / g^T g for one batch (inputs, targets) at the current model params."""
     model.zero_grad(set_to_none=True)
     # Forward pass and compute loss (assumed mean loss over the batch)
+    
     outputs = model(inputs)
-    loss = loss_fn(outputs, targets)
+
+    B=targets.size(0)
+    loss = loss_fn(outputs, targets) / B #Use "sum" loss, so divide by B to make it mean
     # Compute gradients w.r.t. parameters (creating graph for second-order calc)
     grad_params = torch.autograd.grad(loss, model.parameters(), create_graph=True)
+
+    v = [g.detach() for g in grad_params]
     # Compute Hessian-vector product H*g (by taking gradient of the dot(grad, grad_outputs))
-    hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=grad_params, retain_graph=False)
+    hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=v, retain_graph=False)
     # Compute g^T H g (dot product of grad and H*grad), and grad norm squared
     gHg = sum((g * hvp).sum() for g, hvp in zip(grad_params, hv))
     grad_norm_sq = sum((g**2).sum() for g in grad_params)

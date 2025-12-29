@@ -51,7 +51,6 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
     bs = torch.zeros(max_steps // bs_freq if bs_freq >= 0 else 0)
 
     for step in range(0, max_steps):
-        print(step)
         if step % eval_freq ==0: 
             train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                             physical_batch_size)
@@ -89,7 +88,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
 
         if (loss_goal != None and train_loss[step] < loss_goal) or (acc_goal != None and train_acc[step] > acc_goal):
             break
-
+        
+        network.train()
         optimizer.zero_grad()
         X, y = next_train_batch()  # ONE minibatch per step
         B = X.size(0)
