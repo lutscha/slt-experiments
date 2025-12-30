@@ -29,6 +29,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     torch.manual_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     network = load_architecture(arch_id, dataset).to(device)
+    print("Number of parameters: ", parameters_to_vector(network.parameters()).cpu().detach().shape[0])
+    print("Training on device: ", device)
 
     if resume_model is not None:
         print(f"Loading pretrained model weights from: {resume_model}")
@@ -45,6 +47,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
+    grad_norms = torch.zeros(max_steps)
+    param_norms = torch.zeros(max_steps)
 
     for step in range(0, max_steps):
         
@@ -82,6 +86,17 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             loss = loss_fn(network(X.to(device)), y.to(device)) / len(train_dataset)
             loss.backward()
         
+        with torch.no_grad():
+            total_grad_norm_sq = 0.0
+            total_param_norm_sq = 0.0
+            for p in network.parameters():
+                if p.grad is not None:
+                    total_grad_norm_sq += p.grad.norm().item() ** 2
+                total_param_norm_sq += p.data.norm().item() ** 2
+            
+            grad_norms[step] = total_grad_norm_sq ** 0.5
+            param_norms[step] = total_param_norm_sq ** 0.5
+
         optimizer.step()
 
     num_eigs = (step // eig_freq) + 1
@@ -89,7 +104,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
-                      ("kappa", kappa[:num_eigs])])
+                      ("kappa", kappa[:num_eigs]), ("grad_norms", grad_norms[:step + 1]),
+                      ("param_norms", param_norms[:step + 1])])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
