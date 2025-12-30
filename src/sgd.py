@@ -58,8 +58,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
             print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
 
         if step % bs_freq == 0:
-            X = train_dataset.data
-            Y = train_dataset.targets
+            X, Y = train_dataset.tensors
             bs[step // bs_freq] = estimate_batch_sharpness(network, X, Y, loss_fn, batch_size,max_batches=max_bs_batches)
             print( "Batch sharpness", bs[step // bs_freq])
 
