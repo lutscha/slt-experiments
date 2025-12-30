@@ -12,6 +12,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import Dataset, DataLoader
 import os
 from transformer_lm.lm_model import generate_square_subsequent_mask
+import time
 # the default value for "physical batch size", which is the largest batch size that we try to put on the GPU
 DEFAULT_PHYS_BS = 1000
 
@@ -226,60 +227,138 @@ def get_hessian_eigenvalues(network: nn.Module, loss_fn: nn.Module, dataset: Dat
 
     return evals, evecs
 
+def flatt(vectors):
+    '''
+    Flattens a list of vectors into a single vector
+    '''
+    return torch.cat([v.flatten() for v in vectors])
 
 
-def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
+def compute_rayleigh_quotient(model, loss):
     """Compute g^T H g / g^T g for one batch (inputs, targets) at the current model params."""
-    model.zero_grad(set_to_none=True)
-    # Forward pass and compute loss (assumed mean loss over the batch)
-    
-    outputs = model(inputs)
+    grads = torch.autograd.grad(loss, model.parameters(), create_graph=True)
 
-    B=targets.size(0)
-    loss = loss_fn(outputs, targets) / B #Use "sum" loss, so divide by B to make it mean
-    # Compute gradients w.r.t. parameters (creating graph for second-order calc)
-    grad_params = torch.autograd.grad(loss, model.parameters(), create_graph=True)
+    grads_vector = flatt(grads)
+    step_vector = grads_vector.detach()
 
-    v = [g.detach() for g in grad_params]
+    grad_step = torch.dot(grads_vector, step_vector)
+
     # Compute Hessian-vector product H*g (by taking gradient of the dot(grad, grad_outputs))
-    hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=v, retain_graph=False)
-    # Compute g^T H g (dot product of grad and H*grad), and grad norm squared
-    gHg = sum((vi * hvi).sum() for vi, hvi in zip(v, hv))
-    grad_norm_sq = sum((vi * vi).sum() for vi in v)
-    # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
-    # return (gHg / (grad_norm_sq + 1e-12)).item()
-    return (gHg.item(), grad_norm_sq.item())
+    Hv = torch.autograd.grad(grad_step, model.parameters(), retain_graph=False)
+    Hv = flatt(Hv).detach()
+    
+    return (torch.dot(step_vector, Hv), torch.dot(step_vector, step_vector))
 
-def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=500, rel_error_tol=5e-3):
+
+def estimate_batch_sharpness(model, 
+                             X,
+                             Y, 
+                             loss_fn, 
+                             batch_size, 
+                             max_estimates=500, 
+                             eps=0.005):
     """Estimate E[g^T H g / g^T g] over random batches via Monte Carlo sampling."""
     model.eval()  # Ensure model is in eval mode (no dropout, etc.) for consistency
-    sum_gHg, sum_g2, count = 0.0, 0.0, 0
-    sum_rq, sum_sq = 0.0, 0.0
-    for inputs, targets in data_loader:
-        inputs, targets = inputs.to(next(model.parameters()).device), targets.to(next(model.parameters()).device)
-        # Compute Rayleigh quotient for this batch
-        # rq = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
-        gHg, g2 = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
-        # Update running average and variance
-        count += 1
+    device = next(model.parameters()).device
+    gHg_vals = []
+    norm_g_vals = []
+
+    # Create independent RNG using current time and process info for true randomness
+    entropy_seed = int((time.time() * 1000000) % (2**32)) ^ os.getpid()
+    rng = torch.Generator()
+    rng.manual_seed(entropy_seed)
+
+    for i in range(max_estimates):
+
+        shuffle = torch.randperm(len(X), generator=rng)
+        random_idx = shuffle[:batch_size]
+
+        X_batch = X[random_idx].to(device)
+        Y_batch = Y[random_idx].to(device)
+
+        loss = loss_fn(model(X_batch), Y_batch)/Y_batch.size(0)
+
+        gHg, norm_g = compute_rayleigh_quotient(model, loss)
+
+        gHg = gHg.item()
+        norm_g = norm_g.item()
+
+        gHg_vals.append(gHg)
+        norm_g_vals.append(norm_g)
+
+        if i < 10:
+            continue
         
-        sum_gHg += gHg
-        sum_g2 += g2
+        mean_x, mean_y = np.mean(gHg_vals), np.mean(norm_g_vals)
+        var_x,  var_y  = np.var(gHg_vals, ddof=1), np.var(norm_g_vals, ddof=1)
+        cov_xy = np.cov(gHg_vals, norm_g_vals, ddof=1)[0, 1]
+        
+        R = mean_x / mean_y
 
-        rq = gHg / g2 + 1e-12
-        sum_rq += rq
-        sum_sq += rq * rq
+        var_R = (var_x / mean_y**2
+                 - 2 * cov_xy * mean_x / mean_y**3
+                 + var_y * mean_x**2 / mean_y**4) / len(gHg_vals)
+        
+        rse = np.sqrt(var_R) / abs(R)  # relative standard error
 
-        if count >= 2:  # check relative error after at least 2 samples
-            mean = sum_rq / count
-            # (Using standard error of the mean as uncertainty estimate)
-            variance = (sum_sq / count) - mean**2
-            std_error = math.sqrt(abs(variance) / count)
-            if std_error / abs(mean) < rel_error_tol:
-                break
-        if count >= max_batches:
+        if rse < eps:                    # stopping rule
             break
-    return sum_gHg / sum_g2
+
+    gHg_normalized = np.array(gHg_vals) / np.array(norm_g_vals)
+    return float(np.mean(gHg_normalized))
+    
+# def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
+#     """Compute g^T H g / g^T g for one batch (inputs, targets) at the current model params."""
+#     model.zero_grad(set_to_none=True)
+#     # Forward pass and compute loss (assumed mean loss over the batch)
+    
+#     outputs = model(inputs)
+
+#     B=targets.size(0)
+#     loss = loss_fn(outputs, targets) / B #Use "sum" loss, so divide by B to make it mean
+#     # Compute gradients w.r.t. parameters (creating graph for second-order calc)
+#     grad_params = torch.autograd.grad(loss, model.parameters(), create_graph=True)
+
+#     v = [g.detach() for g in grad_params]
+#     # Compute Hessian-vector product H*g (by taking gradient of the dot(grad, grad_outputs))
+#     hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=v, retain_graph=False)
+#     # Compute g^T H g (dot product of grad and H*grad), and grad norm squared
+#     gHg = sum((vi * hvi).sum() for vi, hvi in zip(v, hv))
+#     grad_norm_sq = sum((vi * vi).sum() for vi in v)
+#     # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
+#     # return (gHg / (grad_norm_sq + 1e-12)).item()
+#     return (gHg.item(), grad_norm_sq.item())
+
+# def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=500, rel_error_tol=0.005):
+#     """Estimate E[g^T H g / g^T g] over random batches via Monte Carlo sampling."""
+#     model.eval()  # Ensure model is in eval mode (no dropout, etc.) for consistency
+#     sum_gHg, sum_g2, count = 0.0, 0.0, 0
+#     sum_rq, sum_sq = 0.0, 0.0
+#     for inputs, targets in data_loader:
+#         inputs, targets = inputs.to(next(model.parameters()).device), targets.to(next(model.parameters()).device)
+#         # Compute Rayleigh quotient for this batch
+#         # rq = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
+#         gHg, g2 = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
+#         # Update running average and variance
+#         count += 1
+        
+#         sum_gHg += gHg
+#         sum_g2 += g2
+
+#         rq = gHg / g2 + 1e-12
+#         sum_rq += rq
+#         sum_sq += rq * rq
+
+#         if count >= 2:  # check relative error after at least 2 samples
+#             mean = sum_rq / count
+#             # (Using standard error of the mean as uncertainty estimate)
+#             variance = (sum_sq / count) - mean**2
+#             std_error = math.sqrt(abs(variance) / count)
+#             if std_error / abs(mean) < rel_error_tol:
+#                 break
+#         if count >= max_batches:
+#             break
+#     return sum_gHg / sum_g2
 
 
 
