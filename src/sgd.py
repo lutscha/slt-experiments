@@ -45,10 +45,15 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
 
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
-    iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
-    eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
-    kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
-    bs = torch.zeros(max_steps // bs_freq if bs_freq >= 0 else 0)
+    def n_points(max_steps, freq):
+    # number of times step%freq==0 for step in [0, max_steps-1]
+        return (max_steps - 1) // freq + 1
+
+    iterates = torch.zeros(n_points(max_steps, iterate_freq), len(projectors)) if iterate_freq > 0 else torch.zeros(0, len(projectors))
+    eigs     = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
+    kappa    = torch.zeros(n_points(max_steps, eig_freq))                      if eig_freq > 0 else torch.zeros(0)
+    bs       = torch.zeros(n_points(max_steps, bs_freq))                       if bs_freq > 0 else torch.zeros(0)
+
 
     for step in range(0, max_steps):
         if step % eval_freq ==0: 

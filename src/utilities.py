@@ -286,7 +286,7 @@ def estimate_batch_sharpness(model,
         gHg_vals.append(gHg)
         norm_g_vals.append(norm_g)
 
-        if i < 10:
+        if i < 20:
             continue
         
         mean_x, mean_y = np.mean(gHg_vals), np.mean(norm_g_vals)
