@@ -77,6 +77,9 @@ def load_dataset(dataset_name: str, loss: str) -> DatasetReturn:
     elif dataset_name == "cifar10-5k":
         train, test = load_cifar(loss)
         return take_first(train, 5000), test
+    elif dataset_name == "cifar10-8k":
+        train, test = load_cifar(loss)
+        return take_first(train, 8000), test
     elif dataset_name == "cifar10-10k":
         train, test = load_cifar(loss)
         return take_first(train, 10000), test
