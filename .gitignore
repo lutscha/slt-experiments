@@ -2,3 +2,8 @@
 /experimental_results
 /src/__pycache__
 /src/transformer_lm/__pycache__
+/data
+/results 
+run_lm.py
+run.py
+test.ipynb
