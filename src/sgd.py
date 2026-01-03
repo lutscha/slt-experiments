@@ -62,10 +62,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
 
     for step in range(0, max_steps):
         if step % eval_freq ==0: 
-            train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
+            train_loss[step // eval_freq], train_acc[step // eval_freq] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                             physical_batch_size)
-            test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
-            print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
+            test_loss[step // eval_freq], test_acc[step // eval_freq] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
+            print(f"{step}\t{train_loss[step //eval_freq]:.3f}\t{train_acc[step // eval_freq]:.3f}\t{test_loss[step // eval_freq]:.3f}\t{test_acc[step // eval_freq]:.3f}")
 
         if step % bs_freq == 0:
             X, Y = train_dataset.tensors
@@ -92,12 +92,12 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
                                    ("bs", bs[:step // bs_freq]),
-                                   ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
-                                   ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
+                                   ("train_loss", train_loss[:step // eval_freq]), ("test_loss", test_loss[:step // eval_freq]),
+                                   ("train_acc", train_acc[:step // eval_freq]), ("test_acc", test_acc[:step // eval_freq])])
 
         
 
-        if (loss_goal != None and train_loss[step] < loss_goal) or (acc_goal != None and train_acc[step] > acc_goal):
+        if (loss_goal != None and train_loss[step // eval_freq] < loss_goal) or (acc_goal != None and train_acc[step // eval_freq] > acc_goal):
             break
         
         network.train()
@@ -114,8 +114,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
     save_files_final(directory,
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("bs", bs),
-                      ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
-                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
+                      ("train_loss", train_loss), ("test_loss", test_loss),
+                      ("train_acc", train_acc), ("test_acc", test_acc),
                       ("kappa", kappa[:num_eigs])])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
