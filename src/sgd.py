@@ -43,11 +43,16 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
 
     optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd)
 
-    train_loss, test_loss, train_acc, test_acc = \
-        torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
+    # train_loss, test_loss, train_acc, test_acc = \
+    #     torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     def n_points(max_steps, freq):
     # number of times step%freq==0 for step in [0, max_steps-1]
         return (max_steps - 1) // freq + 1
+
+    train_loss = torch.zeros(n_points(max_steps, eval_freq)) 
+    test_loss = torch.zeros(n_points(max_steps, eval_freq))
+    train_acc = torch.zeros(n_points(max_steps, eval_freq))
+    test_acc = torch.zeros(n_points(max_steps, eval_freq))
 
     iterates = torch.zeros(n_points(max_steps, iterate_freq), len(projectors)) if iterate_freq > 0 else torch.zeros(0, len(projectors))
     eigs     = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
