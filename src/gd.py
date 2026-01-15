@@ -15,7 +15,8 @@ from data import load_dataset, take_first, DATASETS
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None,
+         record_norms : bool = False):
     print(f'wd:{wd}')
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
     print(f"output directory: {directory}")
@@ -47,8 +48,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
-    grad_norms = torch.zeros(max_steps)
-    param_norms = torch.zeros(max_steps)
+    
+    if record_norms:
+        grad_norms = torch.zeros(max_steps)
+        param_norms = torch.zeros(max_steps)
 
     for step in range(0, max_steps):
         
@@ -58,10 +61,12 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         if eig_freq != -1 and step % eig_freq == 0:
            
+            params = parameters_to_vector(network.parameters()).cpu().detach()
+
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)                                                 
             eigs[step // eig_freq, :] = evals
-            kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], parameters_to_vector(network.parameters()).cpu().detach(), dim=0).item()
+            kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], params, dim=0).item()
 
             print("eigenvalues: ", eigs[step // eig_freq, :])
             print("kappa: ", kappa[step // eig_freq])
@@ -86,16 +91,17 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             loss = loss_fn(network(X.to(device)), y.to(device)) / len(train_dataset)
             loss.backward()
         
-        with torch.no_grad():
-            total_grad_norm_sq = 0.0
-            total_param_norm_sq = 0.0
-            for p in network.parameters():
-                if p.grad is not None:
-                    total_grad_norm_sq += p.grad.norm().item() ** 2
-                total_param_norm_sq += p.data.norm().item() ** 2
-            
-            grad_norms[step] = total_grad_norm_sq ** 0.5
-            param_norms[step] = total_param_norm_sq ** 0.5
+        if record_norms:
+            with torch.no_grad():
+                total_grad_norm_sq = 0.0
+                total_param_norm_sq = 0.0
+                for p in network.parameters():
+                    if p.grad is not None:
+                        total_grad_norm_sq += p.grad.norm().item() ** 2
+                    total_param_norm_sq += p.data.norm().item() ** 2
+                
+                grad_norms[step] = total_grad_norm_sq ** 0.5
+                param_norms[step] = total_param_norm_sq ** 0.5
 
         optimizer.step()
 
@@ -144,10 +150,12 @@ if __name__ == "__main__":
                     help="full = full-batch GD step, minibatch = SGD step")
     parser.add_argument("--batch_size", type=int, default=128,
                         help="SGD minibatch size (used if mode=minibatch)")
+    parser.add_argument("--record_norms", type=bool, default=False,
+                        help="if 'true', record gradient and parameter norms at each step")
     args = parser.parse_args()
 
     main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
          neigs=args.neigs, physical_batch_size=args.physical_batch_size, eig_freq=args.eig_freq,
          iterate_freq=args.iterate_freq, save_freq=args.save_freq, save_model=args.save_model,
          wd=args.wd, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
-         acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed)
+         acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed, record_norms=args.record_norms)
