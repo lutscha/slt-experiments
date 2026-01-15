@@ -110,8 +110,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
-                      ("kappa", kappa[:num_eigs]), ("grad_norms", grad_norms[:step + 1]),
-                      ("param_norms", param_norms[:step + 1])])
+                      ("kappa", kappa[:num_eigs])])
+    if record_norms:
+        save_files_final(directory, [("grad_norms", grad_norms[:step + 1]), ("param_norms", param_norms[:step + 1])])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
