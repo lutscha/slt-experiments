@@ -7,7 +7,7 @@ import torch.nn as nn
 from scipy.sparse.linalg import LinearOperator, eigsh
 from torch import Tensor
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.optim import SGD
+
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import Dataset, DataLoader
 import os
@@ -39,13 +39,22 @@ def get_modified_flow_directory(dataset: str, arch_id: str, seed: int, loss: str
     return f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/modified_flow_lr_{gd_lr}/tick_{tick}"
 
 
-def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float, wd: float) -> Optimizer:
+def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float, wd: float, cautious: bool) -> Optimizer:
+    
     if opt == "gd":
-        return SGD(parameters, lr=lr, weight_decay=wd)
+        if cautious == True:
+            from SGD_class import SGD as SGDImpl
+            return SGDImpl(parameters, lr=lr, weight_decay=wd, cautious = cautious, foreach=False)
+        else:
+            from torch.optim import SGD as SGDImpl
+            return SGDImpl(parameters, lr=lr, weight_decay=wd)
+    
     elif opt == "polyak":
-        return SGD(parameters, lr=lr, momentum=momentum, nesterov=False)
+        from torch.optim import SGD as SGDImpl
+        return SGDImpl(parameters, lr=lr, momentum=momentum, nesterov=False)
     elif opt == "nesterov":
-        return SGD(parameters, lr=lr, momentum=momentum, nesterov=True)
+        from torch.optim import SGD as SGDImpl
+        return SGDImpl(parameters, lr=lr, momentum=momentum, nesterov=True)
 
 
 def save_files(directory: str, arrays: List[Tuple[str, torch.Tensor]]):
