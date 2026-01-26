@@ -134,7 +134,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
                             mask = (w_old * p.grad) > 0
                             p.add_(w_old * mask.to(p.dtype), alpha=-lr * wd)
                         elif decoupled:
-                            p.add(w_old, alpha=-lr*wd)
+                            p.mul_(1-lr*wd)
                             print('THIS WORKS')
                         
 
