@@ -18,6 +18,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10, max_bs_batches=500, cautious=False):
     print(f'wd:{wd}')
+
     directory = get_gd_directory(dataset, lr, arch_id, seed, "sgd", loss, wd, beta)
     print(f"output directory: {directory}")
     makedirs(directory, exist_ok=True)
@@ -41,7 +42,11 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
     # torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
-    optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd, cautious)
+    if cautious:
+        wdd = 0.0
+    else:
+        wdd = wd
+    optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wdd, cautious)
 
     # train_loss, test_loss, train_acc, test_acc = \
     #     torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
@@ -108,7 +113,17 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
         loss.backward()
         optimizer.step()
 
-        
+        #Cautious wd!
+        if wd != 0 and cautious:
+            with torch.no_grad():
+                for group in optimizer.param_groups:
+                    lr = group["lr"]
+                    for p in group["params"]:
+                        if p.grad is None:
+                            continue
+                        # cautious mask based on update direction (grad) since momentum=0
+                        mask = (p * p.grad) > 0
+                        p.add_(p * mask.to(p.dtype), alpha=-lr * wd)
 
     num_eigs = (step // eig_freq) + 1
     save_files_final(directory,

@@ -42,12 +42,12 @@ def get_modified_flow_directory(dataset: str, arch_id: str, seed: int, loss: str
 def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float, wd: float, cautious: bool) -> Optimizer:
     
     if opt == "gd":
-        if cautious == True:
-            from SGD_class import SGD as SGDImpl
-            return SGDImpl(parameters, lr=lr, weight_decay=wd, cautious = cautious, foreach=False)
-        else:
-            from torch.optim import SGD as SGDImpl
-            return SGDImpl(parameters, lr=lr, weight_decay=wd)
+        # if cautious == True:
+        #     from SGD_class import SGD as SGDImpl
+        #     return SGDImpl(parameters, lr=lr, weight_decay=wd, cautious = cautious, foreach=False)
+        # else:
+        from torch.optim import SGD as SGDImpl
+        return SGDImpl(parameters, lr=lr, weight_decay=wd)
     
     elif opt == "polyak":
         from torch.optim import SGD as SGDImpl
