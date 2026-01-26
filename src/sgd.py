@@ -123,20 +123,16 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
         #Cautious wd!
         if wd != 0 and cautious:
             with torch.no_grad():
-                total = 0
-                decayed = 0
                 for group in optimizer.param_groups:
                     lr = group["lr"]
                     for p in group["params"]:
                         if p.grad is None:
                             continue
                         # cautious mask based on update direction (grad) since momentum=0
+                        w_old = old[p]
+                        mask = (w_old * p.grad) > 0
+                        p.add_(w_old * mask.to(p.dtype), alpha=-lr * wd)
                         
-                        mask = (p * p.grad) > 0
-                        decayed += mask.sum().item()
-                        total += mask.numel()
-                        p.add_(p * mask.to(p.dtype), alpha=-lr * wd)
-                        print(f"cautious wd active on {decayed/total:.3%} of parameters")
 
     num_eigs = (step // eig_freq) + 1
     save_files_final(directory,
