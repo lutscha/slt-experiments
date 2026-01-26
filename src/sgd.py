@@ -16,7 +16,7 @@ from data import load_dataset, take_first, DATASETS
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size: int, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10, max_bs_batches=500, cautious=False):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10, max_bs_batches=500, cautious=False, decoupled=False):
     print(f'wd:{wd}')
 
     directory = get_gd_directory(dataset, lr, arch_id, seed, "sgd", loss, wd, beta)
@@ -42,7 +42,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
     # torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
-    if cautious:
+    if cautious or decoupled:
         wdd = 0.0
     else:
         wdd = wd
@@ -121,7 +121,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
         optimizer.step()
 
         #Cautious wd!
-        if wd != 0 and cautious:
+        if wd != 0 and (cautious or decoupled):
             with torch.no_grad():
                 for group in optimizer.param_groups:
                     lr = group["lr"]
@@ -130,8 +130,11 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
                             continue
                         # cautious mask based on update direction (grad) since momentum=0
                         w_old = old[p]
-                        mask = (w_old * p.grad) > 0
-                        p.add_(w_old * mask.to(p.dtype), alpha=-lr * wd)
+                        if cautious:
+                            mask = (w_old * p.grad) > 0
+                            p.add_(w_old * mask.to(p.dtype), alpha=-lr * wd)
+                        elif decoupled:
+                            p.add(w_old, alpha=-lr*wd)
                         
 
     num_eigs = (step // eig_freq) + 1
