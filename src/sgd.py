@@ -135,7 +135,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
                             p.add_(w_old * mask.to(p.dtype), alpha=-lr * wd)
                         elif decoupled:
                             p.mul_(1-lr*wd)
-                            print('THIS WORKS')
+                            
                         
 
     num_eigs = (step // eig_freq) + 1
