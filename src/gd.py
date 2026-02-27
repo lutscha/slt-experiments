@@ -17,7 +17,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None,
          record_norms: bool = False, cautious: bool = False,
-         eig_freq_initial: int = -1, eig_freq_zoomed: int = -1, stop_after_second_eig: int = -1):
+         eig_freq_initial: int = -1, eig_freq_zoomed: int = -1, zoomed_steps: int = -1):
     print(f'wd:{wd}')
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
     print(f"output directory: {directory}")
@@ -44,7 +44,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd, cautious)
 
-    # Adaptive eigenvalue schedule (edge-of-stability): X steps until max eig >= 2/eta, then Y steps; stop M steps after second eig >= 2/eta
+    # Adaptive eigenvalue schedule (edge-of-stability): X steps until max eig >= 2/eta, then Y steps. Stop when: step >= max_steps, or step >= eig1_reached + zoomed_steps, or both eigenvalues above 2/eta (immediate).
     use_adaptive_eig = (eig_freq_initial > 0 and eig_freq_zoomed > 0)
     if use_adaptive_eig:
         stability_threshold = 2.0 / lr
@@ -53,6 +53,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         kappa_list = []
         eig_steps_list = []
         max_eig_reached_2_eta = False
+        eigenvalue_1_reached_step = None  # step when first (max) eigenvalue reached 2/eta
         second_eig_reached_2_eta_step = None
     else:
         neigs_actual = neigs
@@ -90,6 +91,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                 max_eig = evals[0].item()
                 if max_eig >= stability_threshold:
                     max_eig_reached_2_eta = True
+                    if eigenvalue_1_reached_step is None:
+                        eigenvalue_1_reached_step = step
                 if len(evals) >= 2 and second_eig_reached_2_eta_step is None and evals[1].item() >= stability_threshold:
                     second_eig_reached_2_eta_step = step
                 print("eigenvalues: ", evals)
@@ -146,10 +149,13 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
         optimizer.step()
 
-        # Stop M steps after second eigenvalue reaches 2/eta (adaptive mode only)
-        if use_adaptive_eig and stop_after_second_eig >= 0 and second_eig_reached_2_eta_step is not None:
-            if step >= second_eig_reached_2_eta_step + stop_after_second_eig:
-                print(f"Stopping: second eigenvalue reached 2/eta at step {second_eig_reached_2_eta_step}, ran {stop_after_second_eig} more steps.")
+        # Stopping conditions (whichever first): max_steps; zoomed_steps after eig1 >= 2/eta; or both eig1 and eig2 >= 2/eta (immediate)
+        if use_adaptive_eig:
+            if second_eig_reached_2_eta_step is not None:
+                print(f"Stopping: both eigenvalues above 2/eta (second reached at step {second_eig_reached_2_eta_step}).")
+                break
+            if eigenvalue_1_reached_step is not None and zoomed_steps >= 0 and step >= eigenvalue_1_reached_step + zoomed_steps:
+                print(f"Stopping: ran {zoomed_steps} steps after eigenvalue 1 reached 2/eta at step {eigenvalue_1_reached_step}.")
                 break
 
     final_step = step + 1
@@ -218,8 +224,8 @@ if __name__ == "__main__":
                         help="initial eigenvalue check frequency X (use with eig_freq_zoomed for adaptive schedule)")
     parser.add_argument("--eig_freq_zoomed", type=int, default=-1,
                         help="zoomed eigenvalue frequency Y after max eig >= 2/eta (Y > X typical)")
-    parser.add_argument("--stop_after_second_eig", type=int, default=-1,
-                        help="stop this many steps after second eigenvalue reaches 2/eta (-1 = do not stop on second eig)")
+    parser.add_argument("--zoomed_steps", type=int, default=-1,
+                        help="stop this many steps after eigenvalue 1 reaches 2/eta (-1 = do not stop on this condition)")
     args = parser.parse_args()
 
     main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
@@ -228,4 +234,4 @@ if __name__ == "__main__":
          wd=args.wd, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
          acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed, record_norms=args.record_norms,
          eig_freq_initial=args.eig_freq_initial, eig_freq_zoomed=args.eig_freq_zoomed,
-         stop_after_second_eig=args.stop_after_second_eig)
+         zoomed_steps=args.zoomed_steps)
