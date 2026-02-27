@@ -44,15 +44,16 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd, cautious)
 
-    # Adaptive eigenvalue schedule (edge-of-stability): X steps until max eig >= 2/eta, then Y steps. Stop when: step >= max_steps, or step >= eig1_reached + zoomed_steps, or both eigenvalues above 2/eta (immediate).
+    # Adaptive eigenvalue schedule (edge-of-stability): compute eigs every X steps until max eig >= 0.85*2/eta, then every Y steps. Stop when: step >= max_steps, or step >= eig1_reached + zoomed_steps, or both eigenvalues above 2/eta (immediate).
     use_adaptive_eig = (eig_freq_initial > 0 and eig_freq_zoomed > 0)
     if use_adaptive_eig:
         stability_threshold = 2.0 / lr
+        zoom_threshold = 0.85 * stability_threshold  # switch to higher-frequency logging at 0.85 * 2/eta
         neigs_actual = max(neigs, 2)
         eigs_list = []
         kappa_list = []
         eig_steps_list = []
-        max_eig_reached_2_eta = False
+        max_eig_reached_zoom_threshold = False  # True when max eig >= 0.85*2/eta (use eig_freq_zoomed)
         eigenvalue_1_reached_step = None  # step when first (max) eigenvalue reached 2/eta
         second_eig_reached_2_eta_step = None
     else:
@@ -80,7 +81,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         # Eigenvalue computation: either adaptive (X then Y) or fixed eig_freq
         if use_adaptive_eig:
-            current_eig_freq = eig_freq_initial if not max_eig_reached_2_eta else eig_freq_zoomed
+            current_eig_freq = eig_freq_initial if not max_eig_reached_zoom_threshold else eig_freq_zoomed
             if step % current_eig_freq == 0:
                 params = parameters_to_vector(network.parameters()).cpu().detach()
                 evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs_actual,
@@ -89,10 +90,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                 kappa_list.append(cosine_similarity(evecs[:, 0], params, dim=0).item())
                 eig_steps_list.append(step)
                 max_eig = evals[0].item()
-                if max_eig >= stability_threshold:
-                    max_eig_reached_2_eta = True
-                    if eigenvalue_1_reached_step is None:
-                        eigenvalue_1_reached_step = step
+                if max_eig >= zoom_threshold:
+                    max_eig_reached_zoom_threshold = True
+                if max_eig >= stability_threshold and eigenvalue_1_reached_step is None:
+                    eigenvalue_1_reached_step = step
                 if len(evals) >= 2 and second_eig_reached_2_eta_step is None and evals[1].item() >= stability_threshold:
                     second_eig_reached_2_eta_step = step
                 print("eigenvalues: ", evals)
@@ -223,7 +224,7 @@ if __name__ == "__main__":
     parser.add_argument("--eig_freq_initial", type=int, default=-1,
                         help="initial eigenvalue check frequency X (use with eig_freq_zoomed for adaptive schedule)")
     parser.add_argument("--eig_freq_zoomed", type=int, default=-1,
-                        help="zoomed eigenvalue frequency Y after max eig >= 2/eta (Y > X typical)")
+                        help="zoomed eigenvalue frequency Y after max eig >= 0.85*2/eta (Y > X typical)")
     parser.add_argument("--zoomed_steps", type=int, default=-1,
                         help="stop this many steps after eigenvalue 1 reaches 2/eta (-1 = do not stop on this condition)")
     args = parser.parse_args()
