@@ -16,7 +16,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None,
-         record_norms : bool = False, cautious : bool = False):
+         record_norms: bool = False, cautious: bool = False,
+         eig_freq_initial: int = -1, eig_freq_zoomed: int = -1, stop_after_second_eig: int = -1):
     print(f'wd:{wd}')
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
     print(f"output directory: {directory}")
@@ -43,12 +44,29 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
     optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd, cautious)
 
+    # Adaptive eigenvalue schedule (edge-of-stability): X steps until max eig >= 2/eta, then Y steps; stop M steps after second eig >= 2/eta
+    use_adaptive_eig = (eig_freq_initial > 0 and eig_freq_zoomed > 0)
+    if use_adaptive_eig:
+        stability_threshold = 2.0 / lr
+        neigs_actual = max(neigs, 2)
+        eigs_list = []
+        kappa_list = []
+        eig_steps_list = []
+        max_eig_reached_2_eta = False
+        second_eig_reached_2_eta_step = None
+    else:
+        neigs_actual = neigs
+
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
-    eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
-    kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
-    
+    if use_adaptive_eig:
+        eigs = None  # filled from list at end
+        kappa = None
+    else:
+        eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
+        kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
+
     if record_norms:
         grad_norms = torch.zeros(max_steps)
         param_norms = torch.zeros(max_steps)
@@ -59,15 +77,29 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
         
-        if eig_freq != -1 and step % eig_freq == 0:
-           
+        # Eigenvalue computation: either adaptive (X then Y) or fixed eig_freq
+        if use_adaptive_eig:
+            current_eig_freq = eig_freq_initial if not max_eig_reached_2_eta else eig_freq_zoomed
+            if step % current_eig_freq == 0:
+                params = parameters_to_vector(network.parameters()).cpu().detach()
+                evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs_actual,
+                                                       physical_batch_size=physical_batch_size)
+                eigs_list.append(evals)
+                kappa_list.append(cosine_similarity(evecs[:, 0], params, dim=0).item())
+                eig_steps_list.append(step)
+                max_eig = evals[0].item()
+                if max_eig >= stability_threshold:
+                    max_eig_reached_2_eta = True
+                if len(evals) >= 2 and second_eig_reached_2_eta_step is None and evals[1].item() >= stability_threshold:
+                    second_eig_reached_2_eta_step = step
+                print("eigenvalues: ", evals)
+                print("kappa: ", kappa_list[-1])
+        elif eig_freq != -1 and step % eig_freq == 0:
             params = parameters_to_vector(network.parameters()).cpu().detach()
-
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                physical_batch_size=physical_batch_size)                                                 
+                                                   physical_batch_size=physical_batch_size)
             eigs[step // eig_freq, :] = evals
             kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], params, dim=0).item()
-
             print("eigenvalues: ", eigs[step // eig_freq, :])
             print("kappa: ", kappa[step // eig_freq])
 
@@ -77,9 +109,18 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
         
         if save_freq != -1 and step % save_freq == 0:
-            save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
-                                   ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
-                                   ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
+            if use_adaptive_eig and eigs_list:
+                save_files(directory, [("eigs", torch.stack(eigs_list)), ("eig_steps", torch.tensor(eig_steps_list)),
+                                       ("iterates", iterates[:step // iterate_freq] if iterate_freq > 0 else iterates),
+                                       ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
+                                       ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
+            else:
+                save_arrays = [("iterates", iterates[:step // iterate_freq] if iterate_freq > 0 else iterates),
+                              ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
+                              ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])]
+                if eig_freq >= 0:
+                    save_arrays = [("eigs", eigs[:step // eig_freq])] + save_arrays
+                save_files(directory, save_arrays)
 
         print(f"{step}\t{train_loss[step]:.3f}\t{train_acc[step]:.3f}\t{test_loss[step]:.3f}\t{test_acc[step]:.3f}")
 
@@ -105,12 +146,31 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
         optimizer.step()
 
-    num_eigs = (step // eig_freq) + 1
-    save_files_final(directory,
-                     [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
-                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
-                      ("kappa", kappa[:num_eigs])])
+        # Stop M steps after second eigenvalue reaches 2/eta (adaptive mode only)
+        if use_adaptive_eig and stop_after_second_eig >= 0 and second_eig_reached_2_eta_step is not None:
+            if step >= second_eig_reached_2_eta_step + stop_after_second_eig:
+                print(f"Stopping: second eigenvalue reached 2/eta at step {second_eig_reached_2_eta_step}, ran {stop_after_second_eig} more steps.")
+                break
+
+    final_step = step + 1
+    if use_adaptive_eig and eigs_list:
+        eigs = torch.stack(eigs_list)
+        kappa = torch.tensor(kappa_list)
+        num_eigs = len(eigs_list)
+        save_files_final(directory,
+                         [("eigs", eigs), ("eig_steps", torch.tensor(eig_steps_list)),
+                          ("iterates", iterates[:final_step // iterate_freq] if iterate_freq > 0 else iterates),
+                          ("train_loss", train_loss[:final_step]), ("test_loss", test_loss[:final_step]),
+                          ("train_acc", train_acc[:final_step]), ("test_acc", test_acc[:final_step]),
+                          ("kappa", kappa)])
+    else:
+        save_arrays_final = [("iterates", iterates[:final_step // iterate_freq] if iterate_freq > 0 else iterates),
+                             ("train_loss", train_loss[:final_step]), ("test_loss", test_loss[:final_step]),
+                             ("train_acc", train_acc[:final_step]), ("test_acc", test_acc[:final_step])]
+        if eig_freq >= 0:
+            num_eigs = (step // eig_freq) + 1
+            save_arrays_final = [("eigs", eigs[:num_eigs]), ("kappa", kappa[:num_eigs])] + save_arrays_final
+        save_files_final(directory, save_arrays_final)
     if record_norms:
         save_files_final(directory, [("grad_norms", grad_norms[:step + 1]), ("param_norms", param_norms[:step + 1])])
     if save_model:
@@ -153,10 +213,19 @@ if __name__ == "__main__":
                         help="SGD minibatch size (used if mode=minibatch)")
     parser.add_argument("--record_norms", type=bool, default=False,
                         help="if 'true', record gradient and parameter norms at each step")
+    # Edge-of-stability adaptive eigenvalue schedule: compute eigs every X steps until max eig >= 2/eta, then every Y steps; stop M steps after second eig >= 2/eta
+    parser.add_argument("--eig_freq_initial", type=int, default=-1,
+                        help="initial eigenvalue check frequency X (use with eig_freq_zoomed for adaptive schedule)")
+    parser.add_argument("--eig_freq_zoomed", type=int, default=-1,
+                        help="zoomed eigenvalue frequency Y after max eig >= 2/eta (Y > X typical)")
+    parser.add_argument("--stop_after_second_eig", type=int, default=-1,
+                        help="stop this many steps after second eigenvalue reaches 2/eta (-1 = do not stop on second eig)")
     args = parser.parse_args()
 
     main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
          neigs=args.neigs, physical_batch_size=args.physical_batch_size, eig_freq=args.eig_freq,
          iterate_freq=args.iterate_freq, save_freq=args.save_freq, save_model=args.save_model,
          wd=args.wd, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,
-         acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed, record_norms=args.record_norms)
+         acc_goal=args.acc_goal, abridged_size=args.abridged_size, seed=args.seed, record_norms=args.record_norms,
+         eig_freq_initial=args.eig_freq_initial, eig_freq_zoomed=args.eig_freq_zoomed,
+         stop_after_second_eig=args.stop_after_second_eig)
