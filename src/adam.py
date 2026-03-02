@@ -141,8 +141,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
         loss.backward()
         optimizer.step()
 
+    num_eigs = (step // eig_freq) + 1
     save_files_final(directory,
-                     [("eigs", eigs[:neigs]),("peigs", peigs[:neigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                     [("eigs", eigs[:num_eigs]),("peigs", peigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss), ("test_loss", test_loss),
                       ("train_acc", train_acc), ("test_acc", test_acc),
                       ("kappa", kappa[:neigs])])
