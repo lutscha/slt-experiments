@@ -142,7 +142,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
         optimizer.step()
 
     save_files_final(directory,
-                     [("eigs", eigs[:neigs]),("eigs", peigs[:neigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                     [("eigs", eigs[:neigs]),("peigs", peigs[:neigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss), ("test_loss", test_loss),
                       ("train_acc", train_acc), ("test_acc", test_acc),
                       ("kappa", kappa[:neigs])])
