@@ -9,14 +9,16 @@ import argparse
 
 from archs import load_architecture
 from utilities import get_gd_optimizer, get_gd_directory, get_loss_and_acc, compute_losses, \
-    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, make_batch_stepper, compute_rayleigh_quotient, estimate_batch_sharpness
+    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, make_batch_stepper, estimate_batch_sharpness, estimate_critical_sharpness
 from data import load_dataset, take_first, DATASETS
 
 
 def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size: int, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10, max_bs_batches=500, cautious=False, decoupled=False):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, 
+         seed: int = 0, wd: float =0, resume_model=None, eval_freq=250, bs_freq=10, max_bs_batches=500, 
+         critical_freq = -1,  cautious=False, decoupled=False):
     print(f'wd:{wd}')
 
     directory = get_gd_directory(dataset, lr, arch_id, seed, "sgd", loss, wd, beta)
@@ -63,7 +65,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
     eigs     = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
     kappa    = torch.zeros(n_points(max_steps, eig_freq))                      if eig_freq > 0 else torch.zeros(0)
     bs       = torch.zeros(n_points(max_steps, bs_freq))                       if bs_freq > 0 else torch.zeros(0)
-
+    cs       = torch.zeros(n_points(max_steps, critical_freq))
 
     for step in range(0, max_steps):
         if step % eval_freq ==0: 
@@ -111,6 +113,20 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
         B = X.size(0)
         loss = loss_fn(network(X), y) / B   # loss_fn is SUM reduction
         loss.backward()
+
+        params = [p for p in network.parameters() if p.grad is not None]
+        dt = [p.grad.detach().clone() for p in params]
+
+
+        if critical_freq != -1 and step % critical_freq == 0:
+            cs[step // critical_freq] = estimate_critical_sharpness(network, X,y, loss_fn, loss.item(), dt, lr)
+            print(f'critical_sharpness = {cs[step // critical_freq]}')
+
+        if save_freq != -1 and step % save_freq == 0:
+            save_files(directory, [("cs", cs[:step // critical_freq])])
+
+
+
         old = {}
         with torch.no_grad():
             for group in optimizer.param_groups:
@@ -144,7 +160,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, batch_size:
                       ("bs", bs),
                       ("train_loss", train_loss), ("test_loss", test_loss),
                       ("train_acc", train_acc), ("test_acc", test_acc),
-                      ("kappa", kappa[:num_eigs])])
+                      ("kappa", kappa[:num_eigs]), ("cs", cs)])
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 

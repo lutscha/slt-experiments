@@ -23,8 +23,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
          max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0):
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float = 0.0, adamw: bool = False):
     results_dir = os.environ["RESULTS"]
+
     directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adam/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}"
     print(f"output directory: {directory}")
     makedirs(directory, exist_ok=True)
@@ -40,7 +41,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     torch.manual_seed(7)
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
-    optimizer = torch.optim.Adam(network.parameters(), lr, (beta1, beta2), epsilon)
+    optimizer = torch.optim.Adam(network.parameters(), lr, (beta1, beta2), epsilon, wd, decoupled_weight_decay=adamw)
 
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)

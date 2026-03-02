@@ -1,4 +1,4 @@
-from typing import List, Tuple, Iterable
+from typing import List, Tuple, Iterable, Callable
 
 import math
 import numpy as np
@@ -316,60 +316,80 @@ def estimate_batch_sharpness(model,
     gHg_normalized = np.array(gHg_vals) / np.array(norm_g_vals)
     return float(np.mean(gHg_normalized))
     
-# def compute_rayleigh_quotient(model, loss_fn, inputs, targets):
-#     """Compute g^T H g / g^T g for one batch (inputs, targets) at the current model params."""
-#     model.zero_grad(set_to_none=True)
-#     # Forward pass and compute loss (assumed mean loss over the batch)
+
+
+def exponential_search( dt, 
+                        loss0: float,
+                        eta0: float,
+                        compute_loss: Callable[[float, object], float],
+                        N: int = 25,
+                        eta_min: float = 0.0,
+                        eta_max: float = float('inf')
+                        ):
+    eta = eta0
+    loss_eta = compute_loss(eta, dt)
+
+    if loss_eta <loss0:
+        direction = +1
+    else:
+        direction = -1
     
-#     outputs = model(inputs)
+    for _ in range(1,N):
+        eta = eta * 2 if direction == +1 else eta / 2
+        loss_eta = compute_loss(eta, dt)
 
-#     B=targets.size(0)
-#     loss = loss_fn(outputs, targets) / B #Use "sum" loss, so divide by B to make it mean
-#     # Compute gradients w.r.t. parameters (creating graph for second-order calc)
-#     grad_params = torch.autograd.grad(loss, model.parameters(), create_graph=True)
+        if direction == +1 and loss_eta > loss0:
+            return eta / 2, eta
 
-#     v = [g.detach() for g in grad_params]
-#     # Compute Hessian-vector product H*g (by taking gradient of the dot(grad, grad_outputs))
-#     hv = torch.autograd.grad(grad_params, model.parameters(), grad_outputs=v, retain_graph=False)
-#     # Compute g^T H g (dot product of grad and H*grad), and grad norm squared
-#     gHg = sum((vi * hvi).sum() for vi, hvi in zip(v, hv))
-#     grad_norm_sq = sum((vi * vi).sum() for vi in v)
-#     # Rayleigh quotient (add a tiny epsilon for safety to avoid division by zero)
-#     # return (gHg / (grad_norm_sq + 1e-12)).item()
-#     return (gHg.item(), grad_norm_sq.item())
-
-# def estimate_batch_sharpness(model, data_loader, loss_fn, max_batches=500, rel_error_tol=0.005):
-#     """Estimate E[g^T H g / g^T g] over random batches via Monte Carlo sampling."""
-#     model.eval()  # Ensure model is in eval mode (no dropout, etc.) for consistency
-#     sum_gHg, sum_g2, count = 0.0, 0.0, 0
-#     sum_rq, sum_sq = 0.0, 0.0
-#     for inputs, targets in data_loader:
-#         inputs, targets = inputs.to(next(model.parameters()).device), targets.to(next(model.parameters()).device)
-#         # Compute Rayleigh quotient for this batch
-#         # rq = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
-#         gHg, g2 = compute_rayleigh_quotient(model, loss_fn, inputs, targets)
-#         # Update running average and variance
-#         count += 1
-        
-#         sum_gHg += gHg
-#         sum_g2 += g2
-
-#         rq = gHg / g2 + 1e-12
-#         sum_rq += rq
-#         sum_sq += rq * rq
-
-#         if count >= 2:  # check relative error after at least 2 samples
-#             mean = sum_rq / count
-#             # (Using standard error of the mean as uncertainty estimate)
-#             variance = (sum_sq / count) - mean**2
-#             std_error = math.sqrt(abs(variance) / count)
-#             if std_error / abs(mean) < rel_error_tol:
-#                 break
-#         if count >= max_batches:
-#             break
-#     return sum_gHg / sum_g2
+        if direction == -1 and loss_eta < loss0:
+            return eta, 2*eta 
 
 
+    return eta, eta
+
+def binary_search(dt,
+                  loss0,
+                  interval,
+                  compute_loss: Callable[[float, object], float],
+                  tolerance = 1/16       
+                ):
+    n_lower = interval[0]
+    n_upper = interval[1]
+
+    while (1-n_lower / n_upper) > tolerance:
+        n_mid = 0.5*(n_lower+n_upper)
+        if compute_loss(n_mid, dt) > loss0:
+            n_upper = n_mid
+        else:
+            n_lower = n_mid
+
+    return 0.5*(n_lower+n_upper)
+
+def make_compute_loss(model, X, Y, loss_fn):
+
+    @torch.no_grad()
+    def compute_loss(eta, dt):
+        for p, d in zip(model.parameters(), dt):
+            p.add_(d, alpha=-eta)
+
+        out = model(X)
+        loss = (loss_fn(out, Y) / X.size(0)).item()
+
+        for p, d in zip(model.parameters(), dt):
+            p.add(d, alpha=+eta)
+            
+        return loss
+
+    return compute_loss
+
+def estimate_critical_sharpness(model, X,Y, loss_fn, loss_0, grads, lr):
+
+    compute_loss = make_compute_loss(model, X,Y, loss_fn) #make computable loss_fn
+
+    interval = exponential_search(grads, loss_0, lr, compute_loss)
+    n_c = binary_search(grads, loss_0, interval, compute_loss)
+
+    return 2/n_c
 
 
 
