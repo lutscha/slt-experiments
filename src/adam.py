@@ -43,9 +43,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     results_dir = os.environ["RESULTS"]
 
     if adamw:
-        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adamw/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}_{batch_size}_{wd}"
+        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adamw/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}/{batch_size}/{wd}"
     else:
-        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adam/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}_{batch_size}_{wd}"
+        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adam/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}/{batch_size}/{wd}"
     print(f"output directory: {directory}")
     
     makedirs(directory, exist_ok=True)
