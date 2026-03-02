@@ -60,6 +60,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
 
     iterates = torch.zeros(n_points(max_steps, iterate_freq), len(projectors)) if iterate_freq > 0 else torch.zeros(0, len(projectors))
     eigs     = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
+    peigs   = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
     kappa    = torch.zeros(n_points(max_steps, eig_freq))                      if eig_freq > 0 else torch.zeros(0)
     # bs       = torch.zeros(n_points(max_steps, bs_freq))                       if bs_freq > 0 else torch.zeros(0)
     # cs       = torch.zeros(n_points(max_steps, critical_freq))
@@ -75,9 +76,14 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
         if step > 0 and eig_freq != -1 and step % eig_freq == 0:
             nu = get_adam_nu(optimizer)
             P = (1 - beta1**step) * ((nu / (1 - beta2**step)).sqrt() + epsilon)
-            eigs[step // eig_freq, :] = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
+            evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
+                                                                physical_batch_size=physical_batch_size, P=None)                                                 
+            eigs[step // eig_freq, :] = evals
+            evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size, P=P)
+            peigs[step // eig_freq, :] = evals
             print("eigenvalues: ", eigs[step//eig_freq, :])
+            print("Preconditioned: ", peigs[step//eig_freq, :])
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
