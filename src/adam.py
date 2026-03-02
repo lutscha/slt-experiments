@@ -89,7 +89,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
 
         if save_freq != -1 and step % save_freq == 0:
-            save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
+            save_files(directory, [("eigs", eigs[:step // eig_freq]),("peigs", peigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
                                    ("train_loss", train_loss[:step // eval_freq]), ("test_loss", test_loss[:step // eval_freq]),
                                    ("train_acc", train_acc[:step // eval_freq]), ("test_acc", test_acc[:step // eval_freq])])
 
@@ -110,7 +110,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
         optimizer.step()
 
     save_files_final(directory,
-                     [("eigs", eigs[:neigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                     [("eigs", eigs[:neigs]),("eigs", peigs[:neigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
                       ("train_loss", train_loss), ("test_loss", test_loss),
                       ("train_acc", train_acc), ("test_acc", test_acc),
                       ("kappa", kappa[:neigs])])
