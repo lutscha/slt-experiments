@@ -31,9 +31,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     results_dir = os.environ["RESULTS"]
 
     if adamw:
-        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adamw/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}"
+        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adamw/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}_{batch_size}_{wd}"
     else:
-        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adam/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}"
+        directory = f"{results_dir}/{dataset}/{arch_id}/seed_{seed}/{loss}/adam/lr_{lr}_beta1_{beta1}_beta2_{beta2}_eps_{epsilon}_{batch_size}_{wd}"
     print(f"output directory: {directory}")
     
     makedirs(directory, exist_ok=True)
@@ -48,10 +48,25 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     network = load_architecture(arch_id, dataset).to(device)
 
+    decay = []
+    no_decay = []
+
+    for name, p in network.named_parameters():
+        if not p.requires_grad:
+            continue
+
+        if p.ndim == 1 or name.endswith(".bias"):
+            # BatchNorm weights + biases
+            no_decay.append(p)
+        else:
+            decay.append(p)
     
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
 
-    optimizer = torch.optim.Adam(network.parameters(), lr, (beta1, beta2), epsilon, wd, decoupled_weight_decay=adamw)
+    optimizer = torch.optim.Adam([
+        {"params": decay, "weight_decay": wd},
+        {"params": no_decay, "weight_decay": 0.0},
+    ], lr, (beta1, beta2), epsilon, wd, decoupled_weight_decay=adamw)
 
     train_loss = torch.zeros(n_points(max_steps, eval_freq)) 
     test_loss = torch.zeros(n_points(max_steps, eval_freq))
