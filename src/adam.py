@@ -105,7 +105,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
 
         # at step = 0, Adam optimizer has no state, so don't record eigs then        
         if step > 0 and eig_freq != -1 and step % eig_freq == 0:
-            nu = get_adam_nu(optimizer)
+            nu = get_adam_nu(optimizer, network)
             P = (1 - beta1**step) * ((nu / (1 - beta2**step)).sqrt() + epsilon)
             assert P.numel() == parameters_to_vector(network.parameters()).numel()
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
