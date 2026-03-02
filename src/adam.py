@@ -10,13 +10,25 @@ from utilities import get_gd_directory, get_loss_and_acc, compute_losses, \
     save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, make_batch_stepper
 from data import load_dataset, take_first, DATASETS
 
-def get_adam_nu(optimizer) -> torch.Tensor:
+# def get_adam_nu(optimizer) -> torch.Tensor:
+#     vec = []
+#     for group in optimizer.param_groups:
+#         for p in group['params']:
+#             state = optimizer.state[p]
+#             vec.append(state['exp_avg_sq'].view(-1))
+#     return torch.cat(vec)
+def get_adam_nu(optimizer, network) -> torch.Tensor:
     vec = []
-    for group in optimizer.param_groups:
-        for p in group['params']:
-            state = optimizer.state[p]
-            vec.append(state['exp_avg_sq'].view(-1))
+    for p in network.parameters():
+        state = optimizer.state.get(p, None)
+        if state is None or "exp_avg_sq" not in state:
+            # before first optimizer.step(), Adam state may not exist
+            vec.append(torch.zeros_like(p).view(-1))
+        else:
+            vec.append(state["exp_avg_sq"].view(-1))
     return torch.cat(vec)
+
+
 def n_points(max_steps, freq):
     # number of times step%freq==0 for step in [0, max_steps-1]
         return (max_steps - 1) // freq + 1
@@ -66,7 +78,11 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     optimizer = torch.optim.Adam([
         {"params": decay, "weight_decay": wd},
         {"params": no_decay, "weight_decay": 0.0},
-    ], lr, (beta1, beta2), epsilon, wd, decoupled_weight_decay=adamw)
+        ], 
+        lr, 
+        (beta1, beta2), 
+        epsilon, 
+        decoupled_weight_decay=adamw)
 
     train_loss = torch.zeros(n_points(max_steps, eval_freq)) 
     test_loss = torch.zeros(n_points(max_steps, eval_freq))
@@ -91,6 +107,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
         if step > 0 and eig_freq != -1 and step % eig_freq == 0:
             nu = get_adam_nu(optimizer)
             P = (1 - beta1**step) * ((nu / (1 - beta2**step)).sqrt() + epsilon)
+            assert P.numel() == parameters_to_vector(network.parameters()).numel()
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size, P=None)                                                 
             eigs[step // eig_freq, :] = evals
