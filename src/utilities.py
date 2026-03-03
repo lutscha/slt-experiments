@@ -200,7 +200,7 @@ def compute_hvp(network: nn.Module, loss_fn: nn.Module,
 
     if P is not None:
         hvp = hvp / P.to(device).sqrt()
-
+    print((hvp - vector).norm().item())
     return hvp
 
 
