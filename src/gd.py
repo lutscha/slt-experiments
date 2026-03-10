@@ -90,10 +90,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         for (X, y) in iterate_dataset(train_dataset, physical_batch_size):
             loss = loss_fn(network(X.to(device)), y.to(device)) / len(train_dataset)
             loss.backward()
+            
         
         if record_norms:
             with torch.no_grad():
-                total_grad_norm_sq = 0.0
                 total_param_norm_sq = 0.0
                 for p in network.parameters():
                     if p.grad is not None:

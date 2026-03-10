@@ -39,7 +39,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float = 0.0, adamw: bool = False,
-         eval_freq: int = 250, batch_size: int = 128):
+         eval_freq: int = 250, batch_size: int = 128, record_norm: bool = True):
     results_dir = os.environ["RESULTS"]
 
     if adamw:
@@ -49,6 +49,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     print(f"output directory: {directory}")
     
     makedirs(directory, exist_ok=True)
+
+  
 
     train_dataset, test_dataset = load_dataset(dataset, loss)
     abridged_train = take_first(train_dataset, abridged_size)
@@ -93,8 +95,10 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
     eigs     = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
     peigs   = torch.zeros(n_points(max_steps, eig_freq), neigs)               if eig_freq > 0 else torch.zeros(0, neigs)
     kappa    = torch.zeros(n_points(max_steps, eig_freq))                      if eig_freq > 0 else torch.zeros(0)
-    # bs       = torch.zeros(n_points(max_steps, bs_freq))                       if bs_freq > 0 else torch.zeros(0)
-    # cs       = torch.zeros(n_points(max_steps, critical_freq))
+
+    if record_norm:
+        param_norms = torch.zeros(n_points(max_steps, eval_freq))
+        param_norms_decay = torch.zeros(n_points(max_steps, eval_freq))
 
     for step in range(0, max_steps):
         if step % eval_freq ==0: 
@@ -117,18 +121,36 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
             print("eigenvalues: ", eigs[step//eig_freq, :])
             print("Preconditioned: ", peigs[step//eig_freq, :])
 
+            if record_norm:
+                with torch.no_grad():
+                    idx = step // eval_freq
+                    total_param_norm_sq = 0.0
+                    decay_norm_sq = 0.0
+                    for p in network.parameters():
+                        total_param_norm_sq += p.detach().pow(2).sum().item()
+                    total_param_norm = total_param_norm_sq ** 0.5
+                    for p in decay:
+                        decay_norm_sq += p.detach().pow(2).sum().item()
+                    decay_norm = decay_norm_sq ** 0.5
+                    
+                    param_norms[idx] = total_param_norm
+                    param_norms_decay[idx] = decay_norm
+
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
 
         if save_freq != -1 and step % save_freq == 0:
-            save_files(directory, [("eigs", eigs[:step // eig_freq]),("peigs", peigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
-                                   ("train_loss", train_loss[:step // eval_freq]), ("test_loss", test_loss[:step // eval_freq]),
-                                   ("train_acc", train_acc[:step // eval_freq]), ("test_acc", test_acc[:step // eval_freq])])
-
-        
-        
-        # if (loss_goal != None and train_loss[step] < loss_goal) or (acc_goal != None and train_acc[step] > acc_goal):
-        #     break
+            save_files(directory, [
+                ("eigs", eigs[:step // eig_freq]),
+                ("peigs", peigs[:step // eig_freq]),
+                ("iterates", iterates[:step // iterate_freq]),
+                ("train_loss", train_loss[:step // eval_freq]), 
+                ("test_loss", test_loss[:step // eval_freq]),
+                ("train_acc", train_acc[:step // eval_freq]), 
+                ("test_acc", test_acc[:step // eval_freq]),
+                ("param_norms", param_norms[:step // eval_freq]),
+                ("param_norms_decay", param_norms_decay[:step // eval_freq])
+                ])
 
         optimizer
 
@@ -142,11 +164,19 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
         optimizer.step()
 
     num_eigs = (step // eig_freq) + 1
-    save_files_final(directory,
-                     [("eigs", eigs[:num_eigs]),("peigs", peigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("train_loss", train_loss), ("test_loss", test_loss),
-                      ("train_acc", train_acc), ("test_acc", test_acc),
-                      ("kappa", kappa[:neigs])])
+    save_files_final(directory, [
+                ("eigs", eigs[:num_eigs]),
+                ("peigs", peigs[:num_eigs]), 
+                ("iterates", iterates[:(step + 1) // iterate_freq]),
+                ("train_loss", train_loss), 
+                ("test_loss", test_loss),
+                ("train_acc", train_acc), 
+                ("test_acc", test_acc),
+                ("kappa", kappa[:neigs]),
+                ("param_norms", param_norms),
+                ("param_norms_decay", param_norms_decay)
+                ])
+    
     if save_model:
         torch.save(network.state_dict(), f"{directory}/snapshot_final")
 
