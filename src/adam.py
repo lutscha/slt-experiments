@@ -106,6 +106,21 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
                                                             physical_batch_size)
             test_loss[step // eval_freq], test_acc[step // eval_freq] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
             print(f"{step}\t{train_loss[step //eval_freq]:.3f}\t{train_acc[step // eval_freq]:.3f}\t{test_loss[step // eval_freq]:.3f}\t{test_acc[step // eval_freq]:.3f}")
+            
+            if record_norm:
+                with torch.no_grad():
+                    idx = step // eval_freq
+                    total_param_norm_sq = 0.0
+                    decay_norm_sq = 0.0
+                    for p in network.parameters():
+                        total_param_norm_sq += p.detach().pow(2).sum().item()
+                    total_param_norm = total_param_norm_sq ** 0.5
+                    for p in decay:
+                        decay_norm_sq += p.detach().pow(2).sum().item()
+                    decay_norm = decay_norm_sq ** 0.5
+                    
+                    param_norms[idx] = total_param_norm
+                    param_norms_decay[idx] = decay_norm
 
         # at step = 0, Adam optimizer has no state, so don't record eigs then        
         if step > 0 and eig_freq != -1 and step % eig_freq == 0:
@@ -121,20 +136,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str,
             print("eigenvalues: ", eigs[step//eig_freq, :])
             print("Preconditioned: ", peigs[step//eig_freq, :])
 
-            if record_norm:
-                with torch.no_grad():
-                    idx = step // eval_freq
-                    total_param_norm_sq = 0.0
-                    decay_norm_sq = 0.0
-                    for p in network.parameters():
-                        total_param_norm_sq += p.detach().pow(2).sum().item()
-                    total_param_norm = total_param_norm_sq ** 0.5
-                    for p in decay:
-                        decay_norm_sq += p.detach().pow(2).sum().item()
-                    decay_norm = decay_norm_sq ** 0.5
-                    
-                    param_norms[idx] = total_param_norm
-                    param_norms_decay[idx] = decay_norm
+            
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
