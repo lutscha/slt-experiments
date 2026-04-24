@@ -106,6 +106,47 @@ class ResNet(nn.Module):
         return x
 
 
+def conv_relu(in_ch, out_ch, stride=1):
+    return nn.Sequential(
+        nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=stride, padding=1, bias=True),  # bias=True now (no BN)
+        nn.ReLU(inplace=True),
+    )
+
+class ResNet9(nn.Module):
+    def __init__(self, num_classes=10):
+        super().__init__()
+
+        self.prep   = conv_relu(3,   64)
+        self.layer1 = conv_relu(64,  128, stride=2)
+        self.res1   = nn.Sequential(conv_relu(128, 128), conv_relu(128, 128))
+
+        self.layer2 = conv_relu(128, 256, stride=2)
+
+        self.layer3 = conv_relu(256, 512, stride=2)
+        self.res2   = nn.Sequential(conv_relu(512, 512), conv_relu(512, 512))
+
+        self.pool   = nn.AdaptiveMaxPool2d(1)
+        self.fc     = nn.Linear(512, num_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        x = self.prep(x)
+        x = self.layer1(x)
+        x = x + self.res1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = x + self.res2(x)
+        x = self.pool(x).view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+    
+def resnet9(**kwargs):
+    return ResNet9(**kwargs)
+
 def resnet20(**kwargs):
     """Constructs a ResNet-20 model.
 
