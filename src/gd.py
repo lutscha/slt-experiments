@@ -8,7 +8,7 @@ import argparse
 
 from archs import load_architecture
 from utilities import get_gd_optimizer, get_gd_directory, get_loss_and_acc, compute_losses, \
-    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset
+    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, compute_cy
 from data import load_dataset, take_first, DATASETS
 
 
@@ -48,6 +48,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
+    cy    = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  # add this
+    alpha = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  # add this
     
     if record_norms:
         grad_norms = torch.zeros(max_steps)
@@ -68,8 +70,14 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             eigs[step // eig_freq, :] = evals
             kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], params, dim=0).item()
 
+
+            cy[step // eig_freq], alpha[step // eig_freq] = compute_cy(
+                network, loss_fn, train_dataset, evecs, physical_batch_size)
+
             print("eigenvalues: ", eigs[step // eig_freq, :])
             print("kappa: ", kappa[step // eig_freq])
+            print("c_y:", cy[step // eig_freq].item())
+            print("alpha:", alpha[step // eig_freq].item())
 
 
         if iterate_freq != -1 and step % iterate_freq == 0:
@@ -78,6 +86,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
+                                   ("cy", cy[:step // eig_freq]), ("a", alpha[:step // eig_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
 
@@ -109,6 +118,7 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     num_eigs = (step // eig_freq) + 1
     save_files_final(directory,
                      [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                      ("cy", cy), ("a", alpha),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
                       ("kappa", kappa[:num_eigs])])
