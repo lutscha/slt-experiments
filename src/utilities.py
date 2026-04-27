@@ -519,18 +519,10 @@ def make_batch_stepper(dataset, batch_size, shuffle=True):
     return next_batch
 
 
-def compute_uHu(network: nn.Module, loss_fn: nn.Module,
-                dataset: Dataset, u: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS):
-    """
-    Computes u^T H u with create_graph=True, so we can call .backward() on it
-    to get VS = nabla_theta(lambda_max) = nabla_theta(u^T H u).
-    
-    Accumulates over full dataset in chunks — u is fixed (detached), 
-    so the graph only needs to flow through the network parameters.
-    """
+def compute_uHu(network, loss_fn, dataset, u, physical_batch_size=DEFAULT_PHYS_BS):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n = len(dataset)
-    u = u.to(device).detach()  # u is fixed — no need to differentiate through Lanczos
+    u = u.to(device).detach()
 
     uHu = torch.zeros(1, device=device)
 
@@ -541,15 +533,15 @@ def compute_uHu(network: nn.Module, loss_fn: nn.Module,
         grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
         grads_flat = torch.cat([g.reshape(-1) for g in grads])
 
-        dot = grads_flat.mul(u).sum()                      # u^T g, scalar
-        # d(dot)/d(theta) = H u  (one column of H, graph retained)
+        dot = grads_flat.mul(u).sum()
         Hu_chunk = torch.autograd.grad(dot, network.parameters(),
-                                       retain_graph=False, create_graph=True)
+                                       retain_graph=True,   # <-- was False
+                                       create_graph=True)
         Hu_flat = torch.cat([g.reshape(-1) for g in Hu_chunk])
 
-        uHu = uHu + Hu_flat.mul(u).sum()                  # accumulate u^T H u
+        uHu = uHu + Hu_flat.mul(u).sum()
 
-    return uHu  # scalar, with graph — ready for .backward()
+    return uHu
 
 
 def compute_cy(network: nn.Module, loss_fn: nn.Module,
