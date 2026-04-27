@@ -7,3 +7,6 @@
 run_lm.py
 run.py
 test.ipynb
+/__pycache__
+.python-version
+.venv
