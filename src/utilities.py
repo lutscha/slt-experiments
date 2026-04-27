@@ -539,13 +539,13 @@ def compute_uHu(network: nn.Module, loss_fn: nn.Module,
         loss = loss_fn(logits, y) / n
 
         grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
-        grads_flat = parameters_to_vector(grads)           # [P], graph retained
+        grads_flat = torch.cat([g.reshape(-1) for g in grads])
 
         dot = grads_flat.mul(u).sum()                      # u^T g, scalar
         # d(dot)/d(theta) = H u  (one column of H, graph retained)
         Hu_chunk = torch.autograd.grad(dot, network.parameters(),
                                        retain_graph=False, create_graph=True)
-        Hu_flat = parameters_to_vector(Hu_chunk)           # [P], graph retained
+        Hu_flat = torch.cat([g.reshape(-1) for g in Hu_chunk])
 
         uHu = uHu + Hu_flat.mul(u).sum()                  # accumulate u^T H u
 
