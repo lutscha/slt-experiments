@@ -562,9 +562,9 @@ def compute_cy(network: nn.Module, loss_fn: nn.Module,
 
     # VS = d(lambda_max)/d(theta) ≈ d(u^T H u)/d(theta)
     VS = torch.autograd.grad(uHu, network.parameters())
-    VS_flat = parameters_to_vector(VS).detach()            # [P]
+    VS_flat = torch.cat([g.reshape(-1) for g in VS]).detach()           # [P]
 
-    theta = parameters_to_vector(network.parameters()).detach()  # [P]
+    theta = torch.cat([p.reshape(-1) for p in network.parameters()]).detach()  # [P]
     c_y = (VS_flat * theta).sum().item()
 
     # Alpha = -VL . VS
@@ -573,7 +573,7 @@ def compute_cy(network: nn.Module, loss_fn: nn.Module,
     for X, y in iterate_dataset(dataset, physical_batch_size):
         loss_scalar = loss_scalar + loss_fn(network(X), y) / n
     VL = torch.autograd.grad(loss_scalar, network.parameters())
-    VL_flat = parameters_to_vector(VL).detach()           # [P]
+    VL_flat = torch.cat([g.reshape(-1) for g in VL]).detach()
     alpha = -(VL_flat * VS_flat).sum().item()
 
     return c_y, alpha
