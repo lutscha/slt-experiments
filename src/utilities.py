@@ -7,11 +7,9 @@ import torch.nn as nn
 from scipy.sparse.linalg import LinearOperator, eigsh
 from torch import Tensor
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import Dataset, DataLoader
 import os
-from transformer_lm.lm_model import generate_square_subsequent_mask
 import time
 # the default value for "physical batch size", which is the largest batch size that we try to put on the GPU
 DEFAULT_PHYS_BS = 1000
