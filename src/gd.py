@@ -5,31 +5,32 @@ from torch.nn.utils import parameters_to_vector
 from torch.nn.functional import cosine_similarity
 
 import argparse
-
 from archs import load_architecture
 from utilities import get_gd_optimizer, get_gd_directory, get_loss_and_acc, compute_losses, \
-    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, compute_cy
+    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, compute_cy, get_ntk_eigenvalues
 from data import load_dataset, take_first, DATASETS
 
 
-def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
+def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
-         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float =0, resume_model=None,
-         record_norms : bool = False, cautious : bool = False):
-    print(f'wd:{wd}')
-    directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss, wd, beta)
+         loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float = 0.0, 
+         resume_model=None, record_norms : bool = False, cautious : bool = False):
+    
+    directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss_type, wd, beta)
+    print(f'wd: {wd}')
     print(f"output directory: {directory}")
     makedirs(directory, exist_ok=True)
 
-    train_dataset, test_dataset = load_dataset(dataset, loss)
+    train_dataset, test_dataset = load_dataset(dataset, loss_type)
     abridged_train = take_first(train_dataset, abridged_size)
 
-    loss_fn, acc_fn = get_loss_and_acc(loss)
+    loss_fn, acc_fn = get_loss_and_acc(loss_type)
 
     torch.manual_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     network = load_architecture(arch_id, dataset).to(device)
+
     print("Number of parameters: ", parameters_to_vector(network.parameters()).cpu().detach().shape[0])
     print("Training on device: ", device)
 
@@ -38,9 +39,8 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         checkpoint = torch.load(resume_model, map_location=device)
         network.load_state_dict(checkpoint)
 
-    # torch.manual_seed(7)
+    
     projectors = torch.randn(nproj, len(parameters_to_vector(network.parameters())))
-
     optimizer = get_gd_optimizer(network.parameters(), opt, lr, beta, wd, cautious)
 
     train_loss, test_loss, train_acc, test_acc = \
@@ -48,8 +48,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
     eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
-    cy    = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  # add this
-    alpha = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  # add this
+    cy    = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  
+    alpha = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
+    ntk = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
     
     if record_norms:
         grad_norms = torch.zeros(max_steps)
@@ -66,16 +67,19 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
             params = parameters_to_vector(network.parameters()).cpu().detach()
 
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                physical_batch_size=physical_batch_size)                                                 
+                                                                physical_batch_size=physical_batch_size)  
+            ntk_evals = get_ntk_eigenvalues(network, abridged_train, neigs=neigs)
+                                               
             eigs[step // eig_freq, :] = evals
+            ntk[step // eig_freq, :] = ntk_evals
+
             kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], params, dim=0).item()
-
-
             cy[step // eig_freq], alpha[step // eig_freq] = compute_cy(
                 network, loss_fn, train_dataset, evecs, physical_batch_size)
 
             print("eigenvalues: ", eigs[step // eig_freq, :])
-            print("kappa: ", kappa[step // eig_freq])
+            print('ntk: ', ntk[step // eig_freq, :])
+            # print("kappa: ", kappa[step // eig_freq])
             print("c_y:", cy[step // eig_freq].item())
             print("alpha:", alpha[step // eig_freq].item())
 
@@ -83,10 +87,9 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
 
-        
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
-                                   ("cy", cy[:step // eig_freq]), ("a", alpha[:step // eig_freq]),
+                                   ("cy", cy[:step // eig_freq]), ("a", alpha[:step // eig_freq]),("ntk", ntk[:step // eig_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
 
@@ -115,13 +118,14 @@ def main(dataset: str, arch_id: str, loss: str, opt: str, lr: float, max_steps: 
 
         optimizer.step()
 
-    num_eigs = (step // eig_freq) + 1
+    n_eig_steps = (step // eig_freq) + 1
     save_files_final(directory,
-                     [("eigs", eigs[:num_eigs]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("cy", cy), ("a", alpha),
+                     [("eigs", eigs[:n_eig_steps]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                      ("ntk", ntk[:n_eig_steps]),
+                      ("cy", cy[:n_eig_steps]), ("a", alpha[:n_eig_steps]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
-                      ("kappa", kappa[:num_eigs])])
+                      ("kappa", kappa[:n_eig_steps])])
     if record_norms:
         save_files_final(directory, [("grad_norms", grad_norms[:step + 1]), ("param_norms", param_norms[:step + 1])])
     if save_model:

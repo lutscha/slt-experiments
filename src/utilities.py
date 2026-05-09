@@ -47,6 +47,7 @@ def get_gd_optimizer(parameters, opt: str, lr: float, momentum: float, wd: float
         from torch.optim import SGD as SGDImpl
         return SGDImpl(parameters, lr=lr, weight_decay=wd)
     
+    
     elif opt == "polyak":
         from torch.optim import SGD as SGDImpl
         return SGDImpl(parameters, lr=lr, momentum=momentum, nesterov=False)
@@ -144,65 +145,6 @@ def compute_hvp(network: nn.Module, loss_fn: nn.Module,
         hvp = hvp / P.to(device).sqrt()
     return hvp
 
-# def compute_hvp(network: nn.Module, loss_fn: nn.Module,
-#                 dataset: Dataset, vector: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS, P: Tensor = None):
-
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     p = len(parameters_to_vector(network.parameters()))
-#     n = len(dataset)
-#     hvp = torch.zeros(p, dtype=torch.float, device=device)
-#     vector = vector.to(device)
-#     if P is not None:
-#         vector = vector / P.to(device).sqrt()
-
-#     # Detect if this is a language model dataset (already mini-batches)
-#     sample_X, sample_y = dataset[0]
-#     is_lm_dataset = sample_X.dim() == 2
-
-#     if is_lm_dataset:
-#         # ============================================================
-#         # LANGUAGE MODEL CASE (seq_len x batch_size)
-#         # ============================================================
-#         for X, y in dataset:
-#             X = X.to(device)
-#             y = y.to(device)
-
-#             seq_len = X.size(0)
-#             src_mask = generate_square_subsequent_mask(seq_len).to(device)
-
-#             logits = network(X, src_mask)                # (seq, batch, vocab)
-#             logits = logits.reshape(-1, logits.size(-1)) # (seq*batch, vocab)
-#             y_flat = y.reshape(-1)                       # (seq*batch)
-
-#             loss = loss_fn(logits, y_flat) / n
-
-#             grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
-#             dot = parameters_to_vector(grads).mul(vector).sum()
-#             grads = [g.contiguous()
-#                      for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
-#             hvp += parameters_to_vector(grads)
-
-#     else:
-#         # ============================================================
-#         # CNN / MLP CASE (normal samples, use batching)
-#         # ============================================================
-#         for X, y in iterate_dataset(dataset, physical_batch_size):
-#             logits = network(X)
-#             loss = loss_fn(logits, y) / n
-
-#             grads = torch.autograd.grad(loss, inputs=network.parameters(), create_graph=True)
-#             dot = parameters_to_vector(grads).mul(vector).sum()
-#             grads = [g.contiguous()
-#                      for g in torch.autograd.grad(dot, network.parameters(), retain_graph=True)]
-#             hvp += parameters_to_vector(grads)
-
-#     if P is not None:
-#         hvp = hvp / P.to(device).sqrt()
-#     # else:
-#     #     print("||Hv - v||:", (hvp - vector).norm().item())
-#     #     print("||Hv||:", hvp.norm().item())
-#     #     print("||v||:", vector.norm().item())
-#     return hvp
 
 
 def lanczos(matrix_vector, dim: int, neigs: int):
@@ -232,10 +174,46 @@ def get_hessian_eigenvalues(network: nn.Module, loss_fn: nn.Module, dataset: Dat
     nparams = len(parameters_to_vector((network.parameters())))
     evals, evecs = lanczos(hvp_delta, nparams, neigs=neigs)
 
-    # trace_est = trace_estimate(hvp_delta, nparams) #Estimate trace via Hutchinson estimator
-    # low_trace = trace_est - evals.sum().item() #Estimates sum of N-50 eigenvalues of Hessian
 
     return evals, evecs
+
+def get_ntk_eigenvalues(network: nn.Module, dataset: Dataset,
+                        neigs: int = 1, physical_batch_size: int = DEFAULT_PHYS_BS):
+    """Compute the top `neigs` eigenvalues of the NTK matrix.
+    
+    Uses the dual-space formulation K = J J^T / n where J is the (n*C x P) Jacobian.
+    Reuses the existing lanczos function for consistency with get_hessian_eigenvalues.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    network.eval()
+
+    # Determine number of output classes from a single forward pass
+    X0, _ = next(iter(DataLoader(dataset, batch_size=1)))
+    num_classes = network(X0.to(device)).shape[1]
+    n = len(dataset)
+
+    # Build J: (n*C, P) Jacobian of outputs w.r.t. parameters
+    grads = []
+    for (X, _) in iterate_dataset(dataset, physical_batch_size):
+        for xi in X:
+            xi = xi.unsqueeze(0).to(device)
+            for c in range(num_classes):
+                network.zero_grad()
+                out = network(xi)
+                out[0, c].backward(retain_graph=(c < num_classes - 1))
+                g = torch.cat([p.grad.detach().flatten()
+                               for p in network.parameters() if p.grad is not None])
+                grads.append(g.cpu())
+
+    J = torch.stack(grads).float()  # (n*C, P)
+    nC = J.shape[0]
+
+    # Lanczos on K = J J^T / n via matvec — never materializes K
+    ntk_matvec = lambda v: (J @ (J.T @ v.float())) / n
+    evals, evecs = lanczos(ntk_matvec, nC, neigs=neigs)
+
+    return evals, evecs
+
 
 def flatt(vectors):
     '''
