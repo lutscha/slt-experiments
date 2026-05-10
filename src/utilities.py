@@ -203,7 +203,7 @@ def get_ntk_eigenvalues(network: nn.Module, dataset: Dataset,
                 out[0, c].backward(retain_graph=(c < num_classes - 1))
                 g = torch.cat([p.grad.detach().flatten()
                                for p in network.parameters() if p.grad is not None])
-                grads.append(g.cpu())
+                grads.append(g) #Remove cpu push, might cause RAM issues
 
     J = torch.stack(grads).float()  # (n*C, P)
     nC = J.shape[0]

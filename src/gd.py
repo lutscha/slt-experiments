@@ -15,7 +15,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float = 0.0, 
-         resume_model=None, record_norms : bool = False, cautious : bool = False):
+         resume_model=None, record_norms : bool = False, cautious : bool = False, abridged_size_ntk=500):
     
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss_type, wd, beta)
     print(f'wd: {wd}')
@@ -24,6 +24,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
 
     train_dataset, test_dataset = load_dataset(dataset, loss_type)
     abridged_train = take_first(train_dataset, abridged_size)
+    abridged_ntk = take_first(train_dataset, abridged_size_ntk) #Lower than Hessian due to more comp heavy
 
     loss_fn, acc_fn = get_loss_and_acc(loss_type)
 
@@ -68,7 +69,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
 
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)  
-            ntk_evals = get_ntk_eigenvalues(network, abridged_train, neigs=neigs)
+            ntk_evals = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
                                                
             eigs[step // eig_freq, :] = evals
             ntk[step // eig_freq, :] = ntk_evals
