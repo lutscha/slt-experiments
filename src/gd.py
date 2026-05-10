@@ -71,11 +71,11 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
                                                                 physical_batch_size=physical_batch_size)  
             
             # free GPU memory before NTK
-            print(torch.cuda.memory_summary())
-            torch.cuda.empty_cache()
-            print(torch.cuda.memory_summary())
+            # print(torch.cuda.memory_summary())
+            # torch.cuda.empty_cache()
+            # print(torch.cuda.memory_summary())
             
-            ntk_evals = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
+            # ntk_evals = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
                                                
             eigs[step // eig_freq, :] = evals
             ntk[step // eig_freq, :] = ntk_evals
