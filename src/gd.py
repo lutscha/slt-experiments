@@ -51,7 +51,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
     cy    = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  
     alpha = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
-    ntk = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
+    ntk = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs) 
     
     if record_norms:
         grad_norms = torch.zeros(max_steps)
