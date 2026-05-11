@@ -72,7 +72,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
             
             
             
-            ntk_evals = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
+            ntk_evals, _ = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
                                                
             eigs[step // eig_freq, :] = evals
             ntk[step // eig_freq, :] = ntk_evals
