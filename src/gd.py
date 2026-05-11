@@ -70,10 +70,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)  
             
-            # free GPU memory before NTK
-            print(torch.cuda.memory_summary())
-            torch.cuda.empty_cache()
-            print(torch.cuda.memory_summary())
+            
             
             ntk_evals = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
                                                

@@ -203,13 +203,13 @@ def get_ntk_eigenvalues(network: nn.Module, dataset: Dataset,
                 out[0, c].backward(retain_graph=(c < num_classes - 1))
                 g = torch.cat([p.grad.detach().flatten()
                                for p in network.parameters() if p.grad is not None])
-                grads.append(g) #Remove cpu push, might cause RAM issues
+                grads.append(g.cpu()) #Remove cpu push, might cause RAM issues
 
     J = torch.stack(grads).float()  # (n*C, P)
     nC = J.shape[0]
 
     # Lanczos on K = J J^T / n via matvec — never materializes K
-    ntk_matvec = lambda v: (J @ (J.T @ v.float())) / n
+    ntk_matvec = lambda v: (J @ (J.T @ v.float().cpu()) / n).cpu()
     evals, evecs = lanczos(ntk_matvec, nC, neigs=neigs)
 
     return evals, evecs
