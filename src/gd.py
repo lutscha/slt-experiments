@@ -86,10 +86,10 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
             print("c_y:", cy[eig_idx].item())
             print("alpha:", alpha[eig_idx].item())
 
-            if swap and not swapped and evals[0].item() > 0.95 * 2 / lr:
+            if swap and not swapped and evals[0].item() > 0.99 * 2 / lr:
                 swapped = True
                 swap_step = step
-                print(f"Swap triggered at step {step}: top eigenvalue {evals[0].item():.4f} > {0.95 * 2 / lr:.4f}")
+                print(f"Swap triggered at step {step}: top eigenvalue {evals[0].item():.4f} > {0.99 * 2 / lr:.4f}")
 
             eig_idx += 1
 
