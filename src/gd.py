@@ -15,7 +15,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float = 0.0, 
-         resume_model=None, record_norms : bool = False, cautious : bool = False, abridged_size_ntk=500):
+         resume_model=None, record_norms : bool = False, cautious : bool = False, abridged_size_ntk=500, ntk_freq: int =-1, swap: bool =False):
     
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss_type, wd, beta)
     print(f'wd: {wd}')
@@ -47,53 +47,64 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
     train_loss, test_loss, train_acc, test_acc = \
         torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps), torch.zeros(max_steps)
     iterates = torch.zeros(max_steps // iterate_freq if iterate_freq > 0 else 0, len(projectors))
-    eigs = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs)
-    kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
-    cy    = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  
-    alpha = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
-    ntk = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, neigs) 
+    # eig buffers sized for max_steps to accommodate per-step computation after a swap
+    eig_buf_size = max_steps if eig_freq > 0 else 0
+    eigs  = torch.zeros(eig_buf_size, neigs)
+    kappa = torch.zeros(eig_buf_size)
+    cy    = torch.zeros(eig_buf_size)
+    alpha = torch.zeros(eig_buf_size)
+    ntk_buf_size = (max_steps // ntk_freq + 1) if ntk_freq > 0 else 0
+    ntk = torch.zeros(ntk_buf_size, neigs)
     
     if record_norms:
         grad_norms = torch.zeros(max_steps)
         param_norms = torch.zeros(max_steps)
 
+    eig_idx = 0
+    ntk_idx = 0
+    swapped = False
+    swap_step = -1
+
     for step in range(0, max_steps):
-        
+
         train_loss[step], train_acc[step] = compute_losses(network, [loss_fn, acc_fn], train_dataset,
                                                            physical_batch_size)
         test_loss[step], test_acc[step] = compute_losses(network, [loss_fn, acc_fn], test_dataset, physical_batch_size)
-        
-        if eig_freq != -1 and step % eig_freq == 0:
-           
+
+        compute_eig = eig_freq > 0 and (swapped or step % eig_freq == 0)
+        if compute_eig:
             params = parameters_to_vector(network.parameters()).cpu().detach()
-
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
-                                                                physical_batch_size=physical_batch_size)  
-            
-            
-            
-            ntk_evals, _ = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
-                                               
-            eigs[step // eig_freq, :] = evals
-            ntk[step // eig_freq, :] = ntk_evals
+                                                   physical_batch_size=physical_batch_size)
 
-            kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], params, dim=0).item()
-            cy[step // eig_freq], alpha[step // eig_freq] = compute_cy(
+            eigs[eig_idx, :] = evals
+            kappa[eig_idx] = cosine_similarity(evecs[:, 0], params, dim=0).item()
+            cy[eig_idx], alpha[eig_idx] = compute_cy(
                 network, loss_fn, train_dataset, evecs, physical_batch_size)
 
-            print("eigenvalues: ", eigs[step // eig_freq, :])
-            print('ntk: ', ntk[step // eig_freq, :])
-            # print("kappa: ", kappa[step // eig_freq])
-            print("c_y:", cy[step // eig_freq].item())
-            print("alpha:", alpha[step // eig_freq].item())
+            print("eigenvalues: ", eigs[eig_idx, :])
+            print("c_y:", cy[eig_idx].item())
+            print("alpha:", alpha[eig_idx].item())
 
+            if swap and not swapped and evals[0].item() > 0.95 * 2 / lr:
+                swapped = True
+                swap_step = step
+                print(f"Swap triggered at step {step}: top eigenvalue {evals[0].item():.4f} > {0.95 * 2 / lr:.4f}")
+
+            eig_idx += 1
+
+        if ntk_freq > 0 and step % ntk_freq == 0:
+            ntk_evals, _ = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
+            ntk[ntk_idx, :] = ntk_evals
+            print('ntk: ', ntk[ntk_idx, :])
+            ntk_idx += 1
 
         if iterate_freq != -1 and step % iterate_freq == 0:
             iterates[step // iterate_freq, :] = projectors.mv(parameters_to_vector(network.parameters()).cpu().detach())
 
         if save_freq != -1 and step % save_freq == 0:
-            save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
-                                   ("cy", cy[:step // eig_freq]), ("a", alpha[:step // eig_freq]),("ntk", ntk[:step // eig_freq]),
+            save_files(directory, [("eigs", eigs[:eig_idx]), ("iterates", iterates[:step // iterate_freq]),
+                                   ("cy", cy[:eig_idx]), ("a", alpha[:eig_idx]), ("ntk", ntk[:ntk_idx]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
 
@@ -122,14 +133,15 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
 
         optimizer.step()
 
-    n_eig_steps = (step // eig_freq) + 1
-    save_files_final(directory,
-                     [("eigs", eigs[:n_eig_steps]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("ntk", ntk[:n_eig_steps]),
-                      ("cy", cy[:n_eig_steps]), ("a", alpha[:n_eig_steps]),
-                      ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
-                      ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
-                      ("kappa", kappa[:n_eig_steps])])
+    final_data = [("eigs", eigs[:eig_idx]), ("iterates", iterates[:(step + 1) // iterate_freq]),
+                  ("ntk", ntk[:ntk_idx]),
+                  ("cy", cy[:eig_idx]), ("a", alpha[:eig_idx]),
+                  ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
+                  ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
+                  ("kappa", kappa[:eig_idx])]
+    if swap:
+        final_data.append(("swap_step", torch.tensor(swap_step)))
+    save_files_final(directory, final_data)
     if record_norms:
         save_files_final(directory, [("grad_norms", grad_norms[:step + 1]), ("param_norms", param_norms[:step + 1])])
     if save_model:
