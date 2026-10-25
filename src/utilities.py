@@ -157,7 +157,7 @@ def lanczos(matrix_vector, dim: int, neigs: int):
         return matrix_vector(gpu_vec)
 
     operator = LinearOperator((dim, dim), matvec=mv)
-    evals, evecs = eigsh(operator, neigs)
+    evals, evecs = eigsh(operator, neigs, which='LA')  # largest algebraic, not largest magnitude
     return torch.from_numpy(np.ascontiguousarray(evals[::-1]).copy()).float(), \
            torch.from_numpy(np.ascontiguousarray(np.flip(evecs, -1)).copy()).float()
 
