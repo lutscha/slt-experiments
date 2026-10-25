@@ -17,7 +17,7 @@ from gd import main
 main(
     dataset="cifar10-5k",
     arch_id='full_200', 
-    loss="mse",
+    loss_type="mse",
     opt="gd",
     lr=0.02,
     wd=0.02,
@@ -33,5 +33,9 @@ main(
 The training metrics,$\lambda_{max}$, $\alpha$ and $c_y$ will be saved as tensors in the `RESULTS` path
 
 Architectures used in paper
-- CNN: arch_id="cnn_relu"
+- CNN: arch_id="cnn-relu"
 - MLP: arch_id="full_200"
+
+### Camera-ready experiments
+See `camera_ready/run.py` (experiment definitions), `camera_ready/analyze.py` (CSVs and plots) and
+`camera_ready/colab.ipynb` (how to run them on Google Colab).
