@@ -2,6 +2,7 @@
 
 Usage (from the repo root, with DATASETS and RESULTS set):
     python camera_ready/run.py layernorm        # R3-R5: LayerNorm vs. unnormalized MLP, symmetry decomposition
+    python camera_ready/grad_check.py           # grad S against finite differences (run before layernorm)
     python camera_ready/run.py ntk              # R1: NTK top eigenvalue and KTA across weight decay
     python camera_ready/run.py ntk_convergence  # R1: NTK sample-size check (needs the ntk group first)
     python camera_ready/run.py adamw            # R2: full-batch AdamW, preconditioned sharpness
@@ -25,12 +26,12 @@ EIG_FREQ = {"layernorm": 25, "ntk": 100, "adamw": 50}
 ADAMW_EVAL_FREQ = 25
 
 # R3-R5. eta = 0.02 as in the paper's MLP experiments; gamma = 0.05 is the rebuttal setting.
+# LayerNorm on the hidden layers only: with LayerNorm on the outputs the MSE cannot go below 2.5 (no gain).
 LAYERNORM_RUNS = [
     dict(arch_id="full_200", wd=0.05),
-    dict(arch_id="full_ln_200", wd=0.05),
     dict(arch_id="full_lnh_200", wd=0.05),
-    dict(arch_id="full_ln_200", wd=0.0),
-    dict(arch_id="full_ln_200", wd=0.02),
+    dict(arch_id="full_lnh_200", wd=0.0),
+    dict(arch_id="full_lnh_200", wd=0.02),
 ]
 
 # R1. The gamma grid of the NTK eigenvalue figure; larger gamma needs more steps to stabilize.

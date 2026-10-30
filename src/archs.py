@@ -11,6 +11,22 @@ from data import num_classes, num_input_channels, image_size, num_pixels
 
 _CONV_OPTIONS = {"kernel_size": 3, "padding": 1, "stride": 1}
 
+
+class LayerNorm(nn.Module):
+    """LayerNorm over the last dimension, without affine parameters.
+
+    Same forward pass as nn.LayerNorm(elementwise_affine=False), written out so that third-order derivatives
+    (grad of u^T H u, used for c_y) are correct: autograd through nn.LayerNorm gave wrong values in finite-difference checks.
+    """
+    def __init__(self, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        var = ((x - mean) ** 2).mean(-1, keepdim=True)
+        return (x - mean) / torch.sqrt(var + self.eps)
+
 def get_activation(activation: str):
     if activation == 'relu':
         return torch.nn.ReLU()
@@ -71,12 +87,12 @@ def fully_connected_net_ln(dataset_name: str, widths: List[int], activation: str
         prev_width = widths[l - 1] if l > 0 else num_pixels(dataset_name)
         modules.extend([
             nn.Linear(prev_width, widths[l], bias=bias),
-            nn.LayerNorm(widths[l], elementwise_affine=False),
+            LayerNorm(),
             get_activation(activation)
         ])
     modules.append(nn.Linear(widths[-1], num_classes(dataset_name), bias=bias))
     if output_ln:
-        modules.append(nn.LayerNorm(num_classes(dataset_name), elementwise_affine=False)) # necessary for scale invariance
+        modules.append(LayerNorm()) # necessary for scale invariance
     return nn.Sequential(*modules)
 
 
