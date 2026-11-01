@@ -11,6 +11,19 @@ from data import num_classes, num_input_channels, image_size, num_pixels
 
 _CONV_OPTIONS = {"kernel_size": 3, "padding": 1, "stride": 1}
 
+
+class LayerNorm(nn.Module):
+    # Same as nn.LayerNorm(elementwise_affine=False). Written out because the third-order derivatives
+    # needed for c_y through nn.LayerNorm did not match finite differences (see camera_ready/grad_check.py).
+    def __init__(self, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        var = ((x - mean) ** 2).mean(-1, keepdim=True)
+        return (x - mean) / torch.sqrt(var + self.eps)
+
 def get_activation(activation: str):
     if activation == 'relu':
         return torch.nn.ReLU()
@@ -64,17 +77,19 @@ def fully_connected_net_bn(dataset_name: str, widths: List[int], activation: str
     return nn.Sequential(*modules)
 
 
-def fully_connected_net_ln(dataset_name: str, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
+def fully_connected_net_ln(dataset_name: str, widths: List[int], activation: str, bias: bool = True,
+                           output_ln: bool = True) -> nn.Module:
     modules = [nn.Flatten()]
     for l in range(len(widths)):
         prev_width = widths[l - 1] if l > 0 else num_pixels(dataset_name)
         modules.extend([
             nn.Linear(prev_width, widths[l], bias=bias),
-            nn.LayerNorm(widths[l], elementwise_affine=False),
+            LayerNorm(),
             get_activation(activation)
         ])
     modules.append(nn.Linear(widths[-1], num_classes(dataset_name), bias=bias))
-    modules.append(nn.LayerNorm(num_classes(dataset_name), elementwise_affine=False)) # necessary for scale invariance
+    if output_ln:
+        modules.append(LayerNorm()) # necessary for scale invariance
     return nn.Sequential(*modules)
 
 
@@ -202,6 +217,9 @@ def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
         return fully_connected_net_bn(dataset_name, [200, 200], 'relu', bias=True)
     elif arch_id == 'full_ln_200':
         return fully_connected_net_ln(dataset_name, [200, 200], 'relu', bias=True)
+    elif arch_id == 'full_lnh_200':
+        # LayerNorm on the hidden layers only; the final linear layer is not scale invariant
+        return fully_connected_net_ln(dataset_name, [200, 200], 'relu', bias=True, output_ln=False)
     
     elif arch_id == 'full_500':
         return fully_connected_net(dataset_name, [500, 500], 'relu', bias=True)

@@ -7,15 +7,17 @@ from torch.nn.functional import cosine_similarity
 import argparse
 from archs import load_architecture
 from utilities import get_gd_optimizer, get_gd_directory, get_loss_and_acc, compute_losses, \
-    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, compute_cy, get_ntk_eigenvalues
+    save_files, save_files_final, get_hessian_eigenvalues, iterate_dataset, compute_cy
 from data import load_dataset, take_first, DATASETS
+from ntk import ntk_metrics
 
 
 def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_steps: int, neigs: int = 0,
          physical_batch_size: int = 1000, eig_freq: int = -1, iterate_freq: int = -1, save_freq: int = -1,
          save_model: bool = False, beta: float = 0.0, nproj: int = 0,
          loss_goal: float = None, acc_goal: float = None, abridged_size: int = 5000, seed: int = 0, wd: float = 0.0, 
-         resume_model=None, record_norms : bool = False, cautious : bool = False, abridged_size_ntk=500):
+         resume_model=None, record_norms : bool = False, cautious : bool = False, abridged_size_ntk=500,
+         track_cy: bool = True, record_blocks: bool = False, ntk_freq: int = -1, ntk_final: bool = False):
     
     directory = get_gd_directory(dataset, lr, arch_id, seed, opt, loss_type, wd, beta)
     print(f'wd: {wd}')
@@ -51,7 +53,11 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
     kappa = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)
     cy    = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0)  
     alpha = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
-    ntk = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0) 
+    n_blocks = len(list(network.parameters()))
+    cy_blocks = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, n_blocks)   # <grad_j S, theta_j>
+    u2_blocks = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, n_blocks)   # ||u_j||^2
+    w2_blocks = torch.zeros(max_steps // eig_freq if eig_freq >= 0 else 0, n_blocks)   # ||theta_j||^2
+    ntk_steps, ntk_records = [], []
     
     if record_norms:
         grad_norms = torch.zeros(max_steps)
@@ -69,20 +75,26 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
 
             evals, evecs = get_hessian_eigenvalues(network, loss_fn, abridged_train, neigs=neigs,
                                                                 physical_batch_size=physical_batch_size)  
-            ntk_evals = get_ntk_eigenvalues(network, abridged_ntk, neigs=neigs)
-                                               
+
             eigs[step // eig_freq, :] = evals
-            ntk[step // eig_freq, :] = ntk_evals
 
             kappa[step // eig_freq] = cosine_similarity(evecs[:, 0], params, dim=0).item()
-            cy[step // eig_freq], alpha[step // eig_freq] = compute_cy(
-                network, loss_fn, train_dataset, evecs, physical_batch_size)
+            if track_cy:
+                cy[step // eig_freq], alpha[step // eig_freq], blocks = compute_cy(
+                    network, loss_fn, train_dataset, evecs, physical_batch_size, per_block=record_blocks)
+                if record_blocks:
+                    cy_blocks[step // eig_freq], u2_blocks[step // eig_freq], w2_blocks[step // eig_freq] = blocks
 
             print("eigenvalues: ", eigs[step // eig_freq, :])
-            print('ntk: ', ntk[step // eig_freq, :])
             # print("kappa: ", kappa[step // eig_freq])
-            print("c_y:", cy[step // eig_freq].item())
-            print("alpha:", alpha[step // eig_freq].item())
+            if track_cy:
+                print("c_y:", cy[step // eig_freq].item())
+                print("alpha:", alpha[step // eig_freq].item())
+
+        if ntk_freq > 0 and step % ntk_freq == 0:
+            ntk_steps.append(step)
+            ntk_records.append(ntk_metrics(network, abridged_ntk))
+            print('ntk: ', ntk_records[-1])
 
 
         if iterate_freq != -1 and step % iterate_freq == 0:
@@ -90,7 +102,7 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
 
         if save_freq != -1 and step % save_freq == 0:
             save_files(directory, [("eigs", eigs[:step // eig_freq]), ("iterates", iterates[:step // iterate_freq]),
-                                   ("cy", cy[:step // eig_freq]), ("a", alpha[:step // eig_freq]),("ntk", ntk[:step // eig_freq]),
+                                   ("cy", cy[:step // eig_freq]), ("a", alpha[:step // eig_freq]),
                                    ("train_loss", train_loss[:step]), ("test_loss", test_loss[:step]),
                                    ("train_acc", train_acc[:step]), ("test_acc", test_acc[:step])])
 
@@ -119,10 +131,20 @@ def main(dataset: str, arch_id: str, loss_type: str, opt: str, lr: float, max_st
 
         optimizer.step()
 
+    if ntk_final:
+        ntk_steps.append(step)
+        ntk_records.append(ntk_metrics(network, abridged_ntk))
+        print('ntk (final): ', ntk_records[-1])
+
     n_eig_steps = (step // eig_freq) + 1
+    if record_blocks:
+        torch.save([name for name, _ in network.named_parameters()], f"{directory}/block_names_final.pt")
+        save_files_final(directory, [("cy_blocks", cy_blocks[:n_eig_steps]), ("u2_blocks", u2_blocks[:n_eig_steps]),
+                                     ("w2_blocks", w2_blocks[:n_eig_steps])])
+    if ntk_records:
+        torch.save({"steps": ntk_steps, "records": ntk_records}, f"{directory}/ntk_final.pt")
     save_files_final(directory,
                      [("eigs", eigs[:n_eig_steps]), ("iterates", iterates[:(step + 1) // iterate_freq]),
-                      ("ntk", ntk[:n_eig_steps]),
                       ("cy", cy[:n_eig_steps]), ("a", alpha[:n_eig_steps]),
                       ("train_loss", train_loss[:step + 1]), ("test_loss", test_loss[:step + 1]),
                       ("train_acc", train_acc[:step + 1]), ("test_acc", test_acc[:step + 1]),
@@ -171,7 +193,7 @@ if __name__ == "__main__":
                         help="if 'true', record gradient and parameter norms at each step")
     args = parser.parse_args()
 
-    main(dataset=args.dataset, arch_id=args.arch_id, loss=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
+    main(dataset=args.dataset, arch_id=args.arch_id, loss_type=args.loss, opt=args.opt, lr=args.lr, max_steps=args.max_steps,
          neigs=args.neigs, physical_batch_size=args.physical_batch_size, eig_freq=args.eig_freq,
          iterate_freq=args.iterate_freq, save_freq=args.save_freq, save_model=args.save_model,
          wd=args.wd, beta=args.beta, nproj=args.nproj, loss_goal=args.loss_goal,

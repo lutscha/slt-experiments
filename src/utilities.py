@@ -157,7 +157,7 @@ def lanczos(matrix_vector, dim: int, neigs: int):
         return matrix_vector(gpu_vec)
 
     operator = LinearOperator((dim, dim), matvec=mv)
-    evals, evecs = eigsh(operator, neigs)
+    evals, evecs = eigsh(operator, neigs, which='LA')  # largest algebraic, not largest magnitude
     return torch.from_numpy(np.ascontiguousarray(evals[::-1]).copy()).float(), \
            torch.from_numpy(np.ascontiguousarray(np.flip(evecs, -1)).copy()).float()
 
@@ -521,7 +521,8 @@ def compute_uHu(network, loss_fn, dataset, u, physical_batch_size=DEFAULT_PHYS_B
 
 
 def compute_cy(network: nn.Module, loss_fn: nn.Module,
-               dataset: Dataset, evecs: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS):
+               dataset: Dataset, evecs: Tensor, physical_batch_size: int = DEFAULT_PHYS_BS,
+               per_block: bool = False):
     """
     Computes c_y = VS . theta where VS = nabla_theta(lambda_max(H)).
     Uses the top eigenvector from Lanczos (already computed) — no extra Lanczos pass.
@@ -529,6 +530,8 @@ def compute_cy(network: nn.Module, loss_fn: nn.Module,
     Returns:
         c_y   : float, VS . theta
         alpha : float, -VL . VS  (Progressive Sharpening Coefficient)
+        blocks: None, or if per_block, a tuple of tensors indexed by parameter tensor j
+                (<VS_j, theta_j>, ||u_j||^2, ||theta_j||^2), used for the symmetry decomposition
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     u = evecs[:, 0].to(device).detach()
@@ -552,6 +555,12 @@ def compute_cy(network: nn.Module, loss_fn: nn.Module,
     VL_flat = torch.cat([g.reshape(-1) for g in VL]).detach()
     alpha = -(VL_flat * VS_flat).sum().item()
 
-    return c_y, alpha
+    blocks = None
+    if per_block:
+        sizes = [p.numel() for p in network.parameters()]
+        blocks = tuple(torch.stack([chunk.sum() for chunk in torch.split(vec, sizes)]).cpu()
+                       for vec in (VS_flat * theta, u * u, theta * theta))
+
+    return c_y, alpha, blocks
 
 
