@@ -13,11 +13,8 @@ _CONV_OPTIONS = {"kernel_size": 3, "padding": 1, "stride": 1}
 
 
 class LayerNorm(nn.Module):
-    """LayerNorm over the last dimension, without affine parameters.
-
-    Same forward pass as nn.LayerNorm(elementwise_affine=False), written out so that third-order derivatives
-    (grad of u^T H u, used for c_y) are correct: autograd through nn.LayerNorm gave wrong values in finite-difference checks.
-    """
+    # Same as nn.LayerNorm(elementwise_affine=False). Written out because the third-order derivatives
+    # needed for c_y through nn.LayerNorm did not match finite differences (see camera_ready/grad_check.py).
     def __init__(self, eps: float = 1e-5):
         super().__init__()
         self.eps = eps

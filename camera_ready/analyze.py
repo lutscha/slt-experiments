@@ -1,10 +1,8 @@
 """Turn the camera-ready runs into CSVs and quick-look plots.
 
-Usage: python camera_ready/analyze.py [--smoke]
+Usage: python camera_ready/analyze.py
 Writes to $RESULTS/camera_ready_out/. Groups whose runs are missing are skipped.
 """
-import argparse
-import json
 import os
 import sys
 
@@ -25,7 +23,6 @@ import run  # noqa: E402
 INVARIANT_PREFIXES = {
     "full_200": ("1.", "4."),
     "full_lnh_200": ("1.", "4."),
-    "full_ln_200": ("1.", "4.", "7."),
 }
 
 
@@ -63,17 +60,12 @@ def layernorm(out):
             "c_y_over_S": cy / S,
             "w_norm_sq": param_norms[np.minimum(steps, len(param_norms) - 1)] ** 2,
             "q": q, "r_sym": r_sym, "c_y_rest": cy_rest,
-            "identity_residual": cy - (-2 * S * q + cy_rest + r_sym),
         })
         df["S_w_norm_sq"] = df["sharpness"] * df["w_norm_sq"]
         rows.append(df)
 
-        # c_y^crit ~ S^d during progressive sharpening (alpha > 0)
-        fit = df[(df["alpha"] > 0) & (df["sharpness"] > 0)]
-        d_exp = np.polyfit(np.log(fit["sharpness"]), np.log(fit["c_y_crit"]), 1)[0] if wd > 0 and len(fit) > 5 else np.nan
         summary.append({"arch_id": e["arch_id"], "wd": wd, "final_sharpness": float(S[-len(S) // 10:].mean()),
-                        "final_loss": float(loss[-1]), "median_c_y_over_S": float(np.median(cy / S)),
-                        "fit_exponent_d": float(d_exp), "max_abs_identity_residual": float(np.abs(df["identity_residual"]).max())})
+                        "final_loss": float(loss[-1]), "median_c_y_over_S": float(np.median(cy / S))})
 
         label = f"{e['arch_id']}, $\\gamma$={wd}"
         axes[0].plot(steps, S, label=label)
@@ -167,14 +159,9 @@ def adamw(out):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--smoke", action="store_true")
-    args = parser.parse_args()
-    if args.smoke:
-        run.use_smoke_settings()
     out = f"{os.environ['RESULTS']}/camera_ready_out"
     os.makedirs(out, exist_ok=True)
     for f in (layernorm, ntk, adamw):
         print(f"== {f.__name__}")
         f(out)
-    print(json.dumps({"written_to": out}))
+    print(f"written to {out}")

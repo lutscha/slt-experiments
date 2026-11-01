@@ -37,5 +37,11 @@ Architectures used in paper
 - MLP: arch_id="full_200"
 
 ### Camera-ready experiments
-See `camera_ready/run.py` (experiment definitions), `camera_ready/analyze.py` (CSVs and plots) and
-`camera_ready/colab.ipynb` (how to run them on Google Colab).
+`camera_ready/run.py` defines the runs added for the camera-ready (LayerNorm, NTK/KTA, AdamW):
+```
+python camera_ready/run.py layernorm   # also: ntk, ntk_convergence, adamw
+python camera_ready/analyze.py         # CSVs and quick-look plots in $RESULTS/camera_ready_out
+python camera_ready/plot_layernorm.py $RESULTS/camera_ready_out layernorm_global_term.pdf
+python camera_ready/plot_adamw.py $RESULTS/camera_ready_out adamw_precond_sharpness.pdf
+```
+`camera_ready/grad_check.py` compares the gradient of the sharpness used for $c_y$ with finite differences.
