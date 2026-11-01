@@ -6,4 +6,5 @@
 /results 
 run_lm.py
 run.py
-test.ipynb__pycache__/
+test.ipynb
+__pycache__/
